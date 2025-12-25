@@ -1,4 +1,11 @@
-export function Header() {
+"use client";
+
+interface HeaderProps {
+  username: string;
+  onLogout: () => void;
+}
+
+export function Header({ username, onLogout }: HeaderProps) {
   return (
     <header className="border-b border-slate-200 bg-white">
       <div className="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between">
@@ -12,11 +19,24 @@ export function Header() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <label className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50 cursor-pointer">
-            <input type="file" multiple accept=".pdf,.doc,.docx" className="hidden" />
-            <span>上传文件</span>
-          </label>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-sm text-slate-600">
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+              />
+            </svg>
+            <span className="font-medium">{username}</span>
+          </div>
+          <button
+            onClick={onLogout}
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50 transition-colors"
+          >
+            退出登录
+          </button>
         </div>
       </div>
     </header>
