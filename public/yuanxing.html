@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>政策文件对比（极简一行版UI）</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-slate-50 text-slate-900">
+  <!-- Header -->
+  <header class="border-b border-slate-200 bg-white">
+    <div class="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="h-9 w-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-semibold">PF</div>
+        <div>
+          <div class="text-sm font-semibold leading-4">政策文件对比（极简）</div>
+          <div class="text-xs text-slate-500">今年文件 + 去年文件 + 结果，一行展示</div>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <label class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50 cursor-pointer">
+          <input type="file" multiple accept=".pdf,.doc,.docx" class="hidden" />
+          <span>上传文件</span>
+        </label>
+        <button class="rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">
+          一键比对（全部）
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="mx-auto max-w-6xl px-4 py-6 space-y-4">
+    <!-- File Upload Areas -->
+    <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <!-- Last Year Upload -->
+      <div class="rounded-2xl border-2 border-dashed border-amber-300 bg-amber-50/50 p-6 hover:border-amber-400 hover:bg-amber-50 transition-colors">
+        <div class="flex flex-col items-center justify-center gap-3">
+          <div class="flex items-center gap-2 text-amber-700">
+            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+            </svg>
+            <span class="text-sm font-semibold">上传去年文件</span>
+          </div>
+          <div class="flex flex-col items-center gap-2">
+            <label class="rounded-xl border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-700 hover:bg-amber-50 hover:border-amber-400 cursor-pointer transition-colors">
+              <input type="file" multiple accept=".pdf,.doc,.docx" class="hidden" />
+              <span>选择文件</span>
+            </label>
+            <span class="text-xs text-amber-600">或拖拽文件到此处</span>
+          </div>
+          <div class="text-xs text-amber-500">支持 PDF、DOC、DOCX 格式</div>
+        </div>
+      </div>
+
+      <!-- This Year Upload -->
+      <div class="rounded-2xl border-2 border-dashed border-blue-300 bg-blue-50/50 p-6 hover:border-blue-400 hover:bg-blue-50 transition-colors">
+        <div class="flex flex-col items-center justify-center gap-3">
+          <div class="flex items-center gap-2 text-blue-700">
+            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+            </svg>
+            <span class="text-sm font-semibold">上传今年文件</span>
+          </div>
+          <div class="flex flex-col items-center gap-2">
+            <label class="rounded-xl border border-blue-300 bg-white px-4 py-2 text-sm font-medium text-blue-700 hover:bg-blue-50 hover:border-blue-400 cursor-pointer transition-colors">
+              <input type="file" multiple accept=".pdf,.doc,.docx" class="hidden" />
+              <span>选择文件</span>
+            </label>
+            <span class="text-xs text-blue-600">或拖拽文件到此处</span>
+          </div>
+          <div class="text-xs text-blue-500">支持 PDF、DOC、DOCX 格式</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toolbar (optional but simple) -->
+    <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex flex-wrap items-center gap-2">
+          <select class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+            <option>全部状态</option>
+            <option>可比对</option>
+            <option>缺文件</option>
+            <option>已完成</option>
+          </select>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button class="rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800">
+            一键比对（可比对）
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- One-line table -->
+    <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div class="bg-slate-50 px-4 py-3 flex items-center justify-between">
+        <div class="text-sm font-semibold">分公司文件对比列表（一行展示）</div>
+        <div class="text-xs text-slate-500">仅UI原型</div>
+      </div>
+
+      <div class="overflow-auto">
+        <table class="min-w-full text-left text-sm">
+          <thead class="bg-white text-slate-600">
+            <tr class="border-b border-slate-200">
+              <th class="px-4 py-3 font-medium">分公司</th>
+              <th class="px-4 py-3 font-medium">今年文件</th>
+              <th class="px-4 py-3 font-medium">去年文件</th>
+              <th class="px-4 py-3 font-medium">对比结果（同一行）</th>
+              <th class="px-4 py-3 font-medium text-right">操作</th>
+            </tr>
+          </thead>
+
+          <tbody class="divide-y divide-slate-200 bg-white">
+            <!-- Row: ready -->
+            <tr class="hover:bg-slate-50" id="row-shanghai">
+              <td class="px-4 py-3 font-medium whitespace-nowrap">上海分公司</td>
+
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-2">
+                  <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100">📄</span>
+                  <div>
+                    <div class="font-medium">上海_今年.pdf</div>
+                    <div class="text-xs text-slate-500">2.3MB</div>
+                  </div>
+                </div>
+              </td>
+
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-2">
+                  <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100">📄</span>
+                  <div>
+                    <div class="font-medium">上海_去年.docx</div>
+                    <div class="text-xs text-slate-500">640KB</div>
+                  </div>
+                </div>
+              </td>
+
+              <td class="px-4 py-3">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700">可比对</span>
+                  <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">新增 18</span>
+                  <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">删除 6</span>
+                  <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">修改 12</span>
+                  <span class="rounded-full bg-rose-50 px-2 py-1 text-xs text-rose-700">高风险 2</span>
+                </div>
+              </td>
+
+              <td class="px-4 py-3 text-right whitespace-nowrap">
+                <div class="inline-flex gap-2">
+                  <button class="rounded-xl bg-slate-900 px-3 py-1.5 text-xs text-white hover:bg-slate-800">单独比对</button>
+                  <button onclick="togglePreview('shanghai')" class="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs hover:bg-slate-50">查看详情</button>
+                </div>
+              </td>
+            </tr>
+            
+            <!-- Preview row for ready status -->
+            <tr id="preview-shanghai" class="hidden bg-slate-50/50">
+              <td colspan="5" class="px-4 py-4">
+                <div class="rounded-xl border border-slate-200 bg-white p-4">
+                  <div class="mb-3 flex items-center justify-between">
+                    <h3 class="text-sm font-semibold">文件信息预览</h3>
+                    <button onclick="togglePreview('shanghai')" class="text-xs text-slate-500 hover:text-slate-700">收起</button>
+                  </div>
+                  <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div class="mb-2 text-xs font-medium text-slate-600">今年文件</div>
+                      <div class="text-xs text-slate-700">文件名：上海_今年.pdf</div>
+                      <div class="text-xs text-slate-500">大小：2.3MB | 上传时间：2024-12-25 10:15</div>
+                    </div>
+                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div class="mb-2 text-xs font-medium text-slate-600">去年文件</div>
+                      <div class="text-xs text-slate-700">文件名：上海_去年.docx</div>
+                      <div class="text-xs text-slate-500">大小：640KB | 上传时间：2023-12-20 09:30</div>
+                    </div>
+                  </div>
+                  <div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                    <div class="text-xs font-medium text-amber-800">提示：文件已就绪，可进行对比</div>
+                    <div class="mt-1 text-xs text-amber-700">预计对比结果：新增 18 条 | 删除 6 条 | 修改 12 条 | 高风险 2 条</div>
+                  </div>
+                </div>
+              </td>
+            </tr>
+
+            <!-- Row: missing -->
+            <tr class="hover:bg-slate-50">
+              <td class="px-4 py-3 font-medium whitespace-nowrap">深圳分公司</td>
+
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-2">
+                  <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100">📄</span>
+                  <div>
+                    <div class="font-medium">深圳_今年.pdf</div>
+                    <div class="text-xs text-slate-500">1.1MB</div>
+                  </div>
+                </div>
+              </td>
+
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-2 text-slate-400">
+                  <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100">—</span>
+                  <div>
+                    <div class="font-medium">未上传</div>
+                    <div class="text-xs">请补齐去年文件</div>
+                  </div>
+                </div>
+              </td>
+
+              <td class="px-4 py-3">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="rounded-full bg-rose-50 px-2 py-1 text-xs text-rose-700">缺文件</span>
+                  <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">结果：—</span>
+                </div>
+              </td>
+
+              <td class="px-4 py-3 text-right whitespace-nowrap">
+                <div class="inline-flex gap-2">
+                  <button class="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-400 cursor-not-allowed">单独比对</button>
+                  <button class="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs hover:bg-slate-50">催收</button>
+                </div>
+              </td>
+            </tr>
+
+            <!-- Row: done -->
+            <tr class="hover:bg-slate-50" id="row-guangzhou">
+              <td class="px-4 py-3 font-medium whitespace-nowrap">广州分公司</td>
+
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-2">
+                  <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100">📄</span>
+                  <div>
+                    <div class="font-medium">广州_今年.docx</div>
+                    <div class="text-xs text-slate-500">520KB</div>
+                  </div>
+                </div>
+              </td>
+
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-2">
+                  <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100">📄</span>
+                  <div>
+                    <div class="font-medium">广州_去年.pdf</div>
+                    <div class="text-xs text-slate-500">1.9MB</div>
+                  </div>
+                </div>
+              </td>
+
+              <td class="px-4 py-3">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">已完成</span>
+                  <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">新增 3</span>
+                  <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">删除 1</span>
+                  <span class="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">修改 2</span>
+                  <span class="rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700">高风险 0</span>
+                </div>
+              </td>
+
+              <td class="px-4 py-3 text-right whitespace-nowrap">
+                <div class="inline-flex gap-2">
+                  <button class="rounded-xl bg-slate-900 px-3 py-1.5 text-xs text-white hover:bg-slate-800">重新比对</button>
+                  <button onclick="togglePreview('guangzhou')" class="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs hover:bg-slate-50">查看详情</button>
+                </div>
+              </td>
+            </tr>
+            
+            <!-- Preview row for done status -->
+            <tr id="preview-guangzhou" class="hidden bg-slate-50/50">
+              <td colspan="5" class="px-4 py-4">
+                <div class="rounded-xl border border-slate-200 bg-white p-4">
+                  <div class="mb-3 flex items-center justify-between">
+                    <h3 class="text-sm font-semibold">对比详情预览</h3>
+                    <button onclick="togglePreview('guangzhou')" class="text-xs text-slate-500 hover:text-slate-700">收起</button>
+                  </div>
+                  <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div class="mb-2 text-xs font-medium text-slate-600">新增内容</div>
+                      <div class="space-y-1 text-xs">
+                        <div class="rounded bg-emerald-50 px-2 py-1 text-emerald-700">• 新增条款：员工福利政策（第3条）</div>
+                        <div class="rounded bg-emerald-50 px-2 py-1 text-emerald-700">• 新增条款：绩效考核标准（第8条）</div>
+                        <div class="rounded bg-emerald-50 px-2 py-1 text-emerald-700">• 新增条款：培训管理制度（第12条）</div>
+                      </div>
+                    </div>
+                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div class="mb-2 text-xs font-medium text-slate-600">删除内容</div>
+                      <div class="space-y-1 text-xs">
+                        <div class="rounded bg-rose-50 px-2 py-1 text-rose-700">• 删除条款：旧版考勤制度（原第5条）</div>
+                      </div>
+                    </div>
+                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div class="mb-2 text-xs font-medium text-slate-600">修改内容</div>
+                      <div class="space-y-1 text-xs">
+                        <div class="rounded bg-amber-50 px-2 py-1 text-amber-700">• 修改：请假流程（第6条）</div>
+                        <div class="rounded bg-amber-50 px-2 py-1 text-amber-700">• 修改：薪资结构说明（第9条）</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="mt-3 flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2">
+                    <span class="text-xs text-slate-600">对比时间：2024-12-25 14:30</span>
+                    <button class="rounded-lg bg-slate-900 px-3 py-1 text-xs text-white hover:bg-slate-800">查看完整报告</button>
+                  </div>
+                </div>
+              </td>
+            </tr>
+
+          </tbody>
+        </table>
+      </div>
+
+      <div class="border-t border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 flex items-center justify-between">
+        <span>提示：只有“今年+去年”齐全才可“单独比对 / 一键比对”。</span>
+        <span>共 300 家（示意：分页/滚动）</span>
+      </div>
+    </section>
+  </main>
+
+  <footer class="mx-auto max-w-6xl px-4 pb-10 text-xs text-slate-500">
+    极简一行版：今年文件｜去年文件｜对比结果（同一行）｜操作（单独比对/查看）
+  </footer>
+
+  <script>
+    function togglePreview(id) {
+      const previewRow = document.getElementById('preview-' + id);
+      if (previewRow) {
+        previewRow.classList.toggle('hidden');
+      }
+    }
+  </script>
+</body>
+</html>
