@@ -58,13 +58,44 @@ export function Toolbar() {
 
           const data = await response.json();
 
+          // 记录批量对比接口的原始返回
+          console.log(`政策一键对比 [${row.company}] - 接口原始返回:`, {
+            rowId: row.id,
+            company: row.company,
+            file1_id: row.lastYearFile!.file_id,
+            file2_id: row.thisYearFile!.file_id,
+            responseStatus: response.status,
+            responseOk: response.ok,
+            rawResponse: JSON.stringify(data, null, 2),
+            success: data.success,
+            hasData: !!data.data,
+            executeId: data.execute_id,
+            debugUrl: data.debug_url,
+          });
+
           if (!response.ok || !data.success) {
+            console.error(`政策一键对比失败 [${row.company}]:`, {
+              rowId: row.id,
+              error: data.message || "对比失败",
+              fullError: data,
+            });
             throw new Error(data.message || "对比失败");
           }
 
+          console.log(`政策一键对比成功 [${row.company}]:`, {
+            rowId: row.id,
+            company: row.company,
+            resultData: data.data,
+            markdown: data.markdown,
+            resultType: typeof data.data,
+          });
+
+          // 优先使用 markdown 字段，如果没有则使用 data 字段
+          const resultContent = data.markdown || data.data || "对比完成";
+
           updateComparison(row.id, {
             comparisonStatus: "done",
-            comparisonResult: data.data || "对比完成",
+            comparisonResult: resultContent,
             comparisonError: undefined,
           });
         } catch (error: any) {

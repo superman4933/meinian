@@ -4,6 +4,7 @@ import { useState, Fragment } from "react";
 import { useFileContext, ComparisonRow } from "@/contexts/file-context";
 import { formatFileSize } from "@/lib/city-matcher";
 import { getCozeTokenClient } from "@/lib/coze-config";
+import ReactMarkdown from "react-markdown";
 
 function FileDisplay({
   file,
@@ -162,6 +163,24 @@ function PreviewRow({
   }
 
   if (row.comparisonStatus === "done" && row.comparisonResult) {
+    // 提取 markdown 内容
+    let markdownContent = "";
+    
+    if (typeof row.comparisonResult === "string") {
+      markdownContent = row.comparisonResult;
+    } else if (row.comparisonResult && typeof row.comparisonResult === "object") {
+      // 如果结果中有 markdown 字段，优先使用
+      if ((row.comparisonResult as any).markdown) {
+        markdownContent = (row.comparisonResult as any).markdown;
+      } else if ((row.comparisonResult as any).data) {
+        markdownContent = typeof (row.comparisonResult as any).data === "string" 
+          ? (row.comparisonResult as any).data 
+          : JSON.stringify((row.comparisonResult as any).data);
+      } else {
+        markdownContent = JSON.stringify(row.comparisonResult, null, 2);
+      }
+    }
+
     return (
       <tr className="bg-slate-50/50">
         <td colSpan={6} className="px-4 py-4">
@@ -172,10 +191,32 @@ function PreviewRow({
                 收起
               </button>
             </div>
-            <div className="text-sm text-slate-700 whitespace-pre-wrap">
-              {typeof row.comparisonResult === "string"
-                ? row.comparisonResult
-                : JSON.stringify(row.comparisonResult, null, 2)}
+            <div className="prose prose-sm max-w-none text-slate-700">
+              <ReactMarkdown
+                components={{
+                  h1: ({ node, ...props }) => <h1 className="text-xl font-bold mt-4 mb-2" {...props} />,
+                  h2: ({ node, ...props }) => <h2 className="text-lg font-semibold mt-3 mb-2" {...props} />,
+                  h3: ({ node, ...props }) => <h3 className="text-base font-semibold mt-2 mb-1" {...props} />,
+                  h4: ({ node, ...props }) => <h4 className="text-sm font-semibold mt-2 mb-1" {...props} />,
+                  p: ({ node, ...props }) => <p className="mb-2 leading-relaxed" {...props} />,
+                  ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2 space-y-1" {...props} />,
+                  ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2 space-y-1" {...props} />,
+                  li: ({ node, ...props }) => <li className="ml-4" {...props} />,
+                  strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
+                  em: ({ node, ...props }) => <em className="italic" {...props} />,
+                  code: ({ node, ...props }) => (
+                    <code className="bg-slate-100 px-1 py-0.5 rounded text-xs font-mono" {...props} />
+                  ),
+                  pre: ({ node, ...props }) => (
+                    <pre className="bg-slate-100 p-3 rounded overflow-x-auto mb-2" {...props} />
+                  ),
+                  blockquote: ({ node, ...props }) => (
+                    <blockquote className="border-l-4 border-slate-300 pl-4 italic my-2" {...props} />
+                  ),
+                }}
+              >
+                {markdownContent}
+              </ReactMarkdown>
             </div>
           </div>
         </td>
@@ -358,13 +399,44 @@ export function ComparisonTable() {
 
       const data = await response.json();
 
+      // 记录对比接口的原始返回
+      console.log("政策单独对比 - 接口原始返回:", {
+        rowId: row.id,
+        company: row.company,
+        file1_id: row.lastYearFile.file_id,
+        file2_id: row.thisYearFile.file_id,
+        responseStatus: response.status,
+        responseOk: response.ok,
+        rawResponse: JSON.stringify(data, null, 2),
+        success: data.success,
+        hasData: !!data.data,
+        executeId: data.execute_id,
+        debugUrl: data.debug_url,
+      });
+
       if (!response.ok || !data.success) {
+        console.error("政策单独对比失败:", {
+          rowId: row.id,
+          error: data.message || "对比失败",
+          fullError: data,
+        });
         throw new Error(data.message || "对比失败");
       }
 
+      console.log("政策单独对比成功:", {
+        rowId: row.id,
+        company: row.company,
+        resultData: data.data,
+        markdown: data.markdown,
+        resultType: typeof data.data,
+      });
+
+      // 优先使用 markdown 字段，如果没有则使用 data 字段
+      const resultContent = data.markdown || data.data || "对比完成";
+
       updateComparison(row.id, {
         comparisonStatus: "done",
-        comparisonResult: data.data || "对比完成",
+        comparisonResult: resultContent,
         comparisonError: undefined,
       });
     } catch (error: any) {
