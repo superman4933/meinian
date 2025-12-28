@@ -13,6 +13,7 @@ export default function Home() {
   const [username, setUsername] = useState("");
   const [isAutoLogging, setIsAutoLogging] = useState(false);
   const [isChecking, setIsChecking] = useState(true);
+  const [filterStatus, setFilterStatus] = useState("全部状态");
 
   // 检查是否有保存的登录信息并自动登录
   useEffect(() => {
@@ -103,9 +104,9 @@ export default function Home() {
           <FileUpload type="thisYear" />
         </div>
 
-        <Toolbar />
+        <Toolbar onFilterChange={setFilterStatus} />
 
-        <ComparisonTable />
+        <ComparisonTable filterStatus={filterStatus} />
       </main>
 
       <footer className="mx-auto max-w-6xl px-4 pb-10 text-xs text-slate-500">

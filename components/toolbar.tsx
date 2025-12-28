@@ -4,9 +4,21 @@ import { useState } from "react";
 import { useFileContext } from "@/contexts/file-context";
 import { getCozeTokenClient } from "@/lib/coze-config";
 
-export function Toolbar() {
+interface ToolbarProps {
+  onFilterChange?: (filter: string) => void;
+}
+
+export function Toolbar({ onFilterChange }: ToolbarProps) {
   const { comparisons, updateComparison } = useFileContext();
   const [isComparing, setIsComparing] = useState(false);
+  const [filterStatus, setFilterStatus] = useState("全部状态");
+
+  const handleFilterChange = (value: string) => {
+    setFilterStatus(value);
+    if (onFilterChange) {
+      onFilterChange(value);
+    }
+  };
 
   const handleBatchCompare = async (type: "policy" | "commission") => {
     // 筛选出可以对比的项（今年和去年文件都齐全）
@@ -120,11 +132,15 @@ export function Toolbar() {
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          <select className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
-            <option>全部状态</option>
-            <option>可比对</option>
-            <option>缺文件</option>
-            <option>已完成</option>
+          <select 
+            value={filterStatus}
+            onChange={(e) => handleFilterChange(e.target.value)}
+            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+          >
+            <option value="全部状态">全部状态</option>
+            <option value="可比对">可比对</option>
+            <option value="缺文件">缺文件</option>
+            <option value="已完成">已完成</option>
           </select>
         </div>
 

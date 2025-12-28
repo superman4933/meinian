@@ -22,9 +22,9 @@ function FileDisplay({
   if (!file) {
     return (
       <div className="flex items-center gap-2">
-        <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100">—</span>
+        <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-slate-100 text-xs">—</span>
         <div className="flex-1">
-          <div className="font-medium text-slate-400">未上传</div>
+          <div className="font-medium text-slate-400 text-xs">未上传</div>
           <button
             onClick={onUpload}
             className="text-xs text-blue-600 hover:text-blue-800 mt-1"
@@ -39,13 +39,13 @@ function FileDisplay({
   if (file.uploadStatus === "uploading") {
     return (
       <div className="flex items-start gap-2">
-        <div className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-blue-100 flex-shrink-0">
-          <svg className="animate-spin h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24">
+        <div className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-blue-100 flex-shrink-0">
+          <svg className="animate-spin h-3 w-3 text-blue-600" fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
         </div>
-        <div className="flex-1 min-w-0" style={{ width: "200px", maxWidth: "200px" }}>
+        <div className="flex-1 min-w-0" style={{ width: "140px", maxWidth: "140px" }}>
           <div 
             className="font-medium text-sm leading-tight"
             style={{
@@ -68,8 +68,8 @@ function FileDisplay({
   if (file.uploadStatus === "error") {
     return (
       <div className="flex items-start gap-2">
-        <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-red-100 flex-shrink-0">⚠️</span>
-        <div className="flex-1 min-w-0" style={{ width: "200px", maxWidth: "200px" }}>
+        <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-red-100 flex-shrink-0 text-xs">⚠️</span>
+        <div className="flex-1 min-w-0" style={{ width: "140px", maxWidth: "140px" }}>
           <div 
             className="font-medium text-red-600 text-sm leading-tight"
             style={{
@@ -103,8 +103,8 @@ function FileDisplay({
 
   return (
     <div className="flex items-start gap-2 group">
-      <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 flex-shrink-0">📄</span>
-      <div className="flex-1 min-w-0" style={{ width: "200px", maxWidth: "200px" }}>
+      <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-slate-100 flex-shrink-0 text-xs">📄</span>
+      <div className="flex-1 min-w-0" style={{ width: "140px", maxWidth: "140px" }}>
         <button
           onClick={onPreview}
           className="font-medium text-left hover:text-blue-600 block w-full text-sm leading-tight"
@@ -242,7 +242,11 @@ function PreviewRow({
   return null;
 }
 
-export function ComparisonTable() {
+interface ComparisonTableProps {
+  filterStatus?: string;
+}
+
+export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTableProps) {
   const { comparisons, removeFile, updateComparison, addFile } = useFileContext();
   const [openPreviews, setOpenPreviews] = useState<Set<string>>(new Set());
 
@@ -464,8 +468,8 @@ export function ComparisonTable() {
           <thead className="bg-white text-slate-600">
             <tr className="border-b border-slate-200">
               <th className="px-4 py-3 font-medium">分公司</th>
-              <th className="px-4 py-3 font-medium" style={{ width: "220px" }}>去年文件</th>
-              <th className="px-4 py-3 font-medium" style={{ width: "220px" }}>今年文件</th>
+              <th className="px-4 py-3 font-medium" style={{ width: "160px" }}>去年文件</th>
+              <th className="px-4 py-3 font-medium" style={{ width: "160px" }}>今年文件</th>
               <th className="px-4 py-3 font-medium">对比状态</th>
               <th className="px-4 py-3 font-medium">对比结果（同一行）</th>
               <th className="px-4 py-3 font-medium text-right">操作</th>
@@ -488,7 +492,7 @@ export function ComparisonTable() {
                     <tr className="hover:bg-slate-50">
                       <td className="px-4 py-3 font-medium whitespace-nowrap">{displayCompany}</td>
 
-                    <td className="px-4 py-3" style={{ width: "220px" }}>
+                    <td className="px-4 py-3" style={{ width: "160px" }}>
                       <FileDisplay
                         file={row.lastYearFile}
                         type="lastYear"
@@ -498,7 +502,7 @@ export function ComparisonTable() {
                       />
                     </td>
 
-                    <td className="px-4 py-3" style={{ width: "220px" }}>
+                    <td className="px-4 py-3" style={{ width: "160px" }}>
                       <FileDisplay
                         file={row.thisYearFile}
                         type="thisYear"
