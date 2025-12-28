@@ -29,12 +29,14 @@ export async function POST(request: NextRequest) {
       },
     };
     
-    console.log("调用扣子工作流API - 请求参数:", {
-      file1_id,
-      file2_id,
-      prompt,
-      requestBody: JSON.stringify(requestBody, null, 2),
-    });
+    if (process.env.NODE_ENV === 'development') {
+      console.log("调用扣子工作流API - 请求参数:", {
+        file1_id,
+        file2_id,
+        prompt,
+        requestBody: JSON.stringify(requestBody, null, 2),
+      });
+    }
 
     // 调用扣子工作流API
     const response = await fetch("https://api.coze.cn/v1/workflow/run", {
@@ -52,11 +54,13 @@ export async function POST(request: NextRequest) {
     } catch (e) {
       // 如果响应不是JSON格式
       const text = await response.text();
-      console.error("扣子工作流API返回非JSON响应:", {
-        status: response.status,
-        statusText: response.statusText,
-        body: text,
-      });
+      if (process.env.NODE_ENV === 'development') {
+        console.error("扣子工作流API返回非JSON响应:", {
+          status: response.status,
+          statusText: response.statusText,
+          body: text,
+        });
+      }
       
       return NextResponse.json(
         {
@@ -70,23 +74,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 记录扣子API的原始返回数据
-    console.log("扣子工作流API - 原始返回数据:", {
-      status: response.status,
-      statusText: response.statusText,
-      rawResponse: JSON.stringify(data, null, 2),
-      allKeys: Object.keys(data),
-      hasData: !!data.data,
-      hasExecuteId: !!data.execute_id,
-      hasDebugUrl: !!data.debug_url,
-    });
-
-    if (!response.ok) {
-      console.error("扣子工作流API调用失败:", {
+    // 记录扣子API的原始返回数据（仅开发环境）
+    if (process.env.NODE_ENV === 'development') {
+      console.log("扣子工作流API - 原始返回数据:", {
         status: response.status,
         statusText: response.statusText,
-        errorData: data,
+        rawResponse: JSON.stringify(data, null, 2),
+        allKeys: Object.keys(data),
+        hasData: !!data.data,
+        hasExecuteId: !!data.execute_id,
+        hasDebugUrl: !!data.debug_url,
       });
+    }
+
+    if (!response.ok) {
+      if (process.env.NODE_ENV === 'development') {
+        console.error("扣子工作流API调用失败:", {
+          status: response.status,
+          statusText: response.statusText,
+          errorData: data,
+        });
+      }
       
       return NextResponse.json(
         {
@@ -161,14 +169,16 @@ export async function POST(request: NextRequest) {
             structuredData = parsedJson;
             isJsonFormat = true;
             markdownContent = parsedJson.detailed || null;
-            console.log("检测到JSON格式的结构化数据:", {
-              hasSummary: !!parsedJson.summary,
-              hasAdded: !!parsedJson.added,
-              hasModified: !!parsedJson.modified,
-              hasDeleted: !!parsedJson.deleted,
-              hasStatistics: !!parsedJson.statistics,
-              hasDetailed: !!parsedJson.detailed,
-            });
+            if (process.env.NODE_ENV === 'development') {
+              console.log("检测到JSON格式的结构化数据:", {
+                hasSummary: !!parsedJson.summary,
+                hasAdded: !!parsedJson.added,
+                hasModified: !!parsedJson.modified,
+                hasDeleted: !!parsedJson.deleted,
+                hasStatistics: !!parsedJson.statistics,
+                hasDetailed: !!parsedJson.detailed,
+              });
+            }
           } else {
             // 不是预期的JSON结构，当作markdown处理
             markdownContent = extractedContent;
@@ -192,14 +202,16 @@ export async function POST(request: NextRequest) {
           structuredData = extractedContent;
           isJsonFormat = true;
           markdownContent = extractedContent.detailed || null;
-          console.log("检测到JSON格式的结构化数据（对象）:", {
-            hasSummary: !!extractedContent.summary,
-            hasAdded: !!extractedContent.added,
-            hasModified: !!extractedContent.modified,
-            hasDeleted: !!extractedContent.deleted,
-            hasStatistics: !!extractedContent.statistics,
-            hasDetailed: !!extractedContent.detailed,
-          });
+          if (process.env.NODE_ENV === 'development') {
+            console.log("检测到JSON格式的结构化数据（对象）:", {
+              hasSummary: !!extractedContent.summary,
+              hasAdded: !!extractedContent.added,
+              hasModified: !!extractedContent.modified,
+              hasDeleted: !!extractedContent.deleted,
+              hasStatistics: !!extractedContent.statistics,
+              hasDetailed: !!extractedContent.detailed,
+            });
+          }
         } else {
           // 不是预期的JSON结构
           rawContent = JSON.stringify(extractedContent);
@@ -210,18 +222,22 @@ export async function POST(request: NextRequest) {
         markdownContent = extractedContent;
       }
       
-      console.log("数据解析结果:", {
-        isJsonFormat,
-        hasStructuredData: !!structuredData,
-        hasMarkdown: !!markdownContent,
-        markdownLength: markdownContent?.length,
-        markdownPreview: markdownContent?.substring(0, 200),
-      });
+      if (process.env.NODE_ENV === 'development') {
+        console.log("数据解析结果:", {
+          isJsonFormat,
+          hasStructuredData: !!structuredData,
+          hasMarkdown: !!markdownContent,
+          markdownLength: markdownContent?.length,
+          markdownPreview: markdownContent?.substring(0, 200),
+        });
+      }
     } catch (parseError: any) {
-      console.error("解析数据失败:", {
-        error: parseError.message,
-        rawData: data.data,
-      });
+      if (process.env.NODE_ENV === 'development') {
+        console.error("解析数据失败:", {
+          error: parseError.message,
+          rawData: data.data,
+        });
+      }
       // 如果解析失败，使用原始数据
       rawContent = typeof data.data === 'string' ? data.data : JSON.stringify(data.data);
       markdownContent = rawContent;
@@ -239,19 +255,23 @@ export async function POST(request: NextRequest) {
       raw_data: data.data, // 保留原始数据用于调试
     };
     
-    console.log("扣子工作流API - 处理后的返回数据:", {
-      success: result.success,
-      hasData: !!result.data,
-      hasMarkdown: !!result.markdown,
-      dataType: typeof result.data,
-      executeId: result.execute_id,
-      debugUrl: result.debug_url,
-      fullResult: JSON.stringify(result, null, 2),
-    });
+    if (process.env.NODE_ENV === 'development') {
+      console.log("扣子工作流API - 处理后的返回数据:", {
+        success: result.success,
+        hasData: !!result.data,
+        hasMarkdown: !!result.markdown,
+        dataType: typeof result.data,
+        executeId: result.execute_id,
+        debugUrl: result.debug_url,
+        fullResult: JSON.stringify(result, null, 2),
+      });
+    }
 
     return NextResponse.json(result);
   } catch (error: any) {
-    console.error("Compare error:", error);
+    if (process.env.NODE_ENV === 'development') {
+      console.error("Compare error:", error);
+    }
     return NextResponse.json(
       {
         success: false,

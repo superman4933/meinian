@@ -13,7 +13,9 @@ export async function GET() {
     
     return NextResponse.json({ cities });
   } catch (error) {
-    console.error("Error reading cities file:", error);
+    if (process.env.NODE_ENV === 'development') {
+      console.error("Error reading cities file:", error);
+    }
     return NextResponse.json(
       { error: "Failed to read cities file" },
       { status: 500 }

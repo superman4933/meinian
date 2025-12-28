@@ -44,11 +44,13 @@ export async function POST(request: NextRequest) {
     } catch (e) {
       // 如果响应不是JSON格式
       const text = await response.text();
-      console.error("扣子API返回非JSON响应:", {
-        status: response.status,
-        statusText: response.statusText,
-        body: text,
-      });
+      if (process.env.NODE_ENV === 'development') {
+        console.error("扣子API返回非JSON响应:", {
+          status: response.status,
+          statusText: response.statusText,
+          body: text,
+        });
+      }
       
       return NextResponse.json(
         {
@@ -63,11 +65,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (!response.ok) {
-      console.error("扣子API上传失败:", {
-        status: response.status,
-        statusText: response.statusText,
-        data: data,
-      });
+      if (process.env.NODE_ENV === 'development') {
+        console.error("扣子API上传失败:", {
+          status: response.status,
+          statusText: response.statusText,
+          data: data,
+        });
+      }
       
       return NextResponse.json(
         {
@@ -82,15 +86,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 记录上传成功的详细信息
+    // 记录上传成功的详细信息（仅开发环境）
     const fileId = data.id || data.file_id || data.data?.id || data.data?.file_id;
-    console.log("文件上传成功 - 扣子API返回数据:", {
-      fileName: file.name,
-      fileSize: file.size,
-      rawResponse: JSON.stringify(data, null, 2),
-      extractedFileId: fileId,
-      allKeys: Object.keys(data),
-    });
+    if (process.env.NODE_ENV === 'development') {
+      console.log("文件上传成功 - 扣子API返回数据:", {
+        fileName: file.name,
+        fileSize: file.size,
+        rawResponse: JSON.stringify(data, null, 2),
+        extractedFileId: fileId,
+        allKeys: Object.keys(data),
+      });
+    }
 
     return NextResponse.json({
       success: true,
@@ -105,7 +111,9 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error: any) {
-    console.error("Upload error:", error);
+    if (process.env.NODE_ENV === 'development') {
+      console.error("Upload error:", error);
+    }
     return NextResponse.json(
       {
         success: false,

@@ -26,6 +26,23 @@ export function FileUpload({ type }: FileUploadProps) {
   };
 
   const uploadFile = async (file: File) => {
+    // 文件大小限制：20MB
+    const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+    if (file.size > MAX_FILE_SIZE) {
+      const toast = document.createElement("div");
+      toast.className = "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-red-500 text-white px-6 py-4 rounded-lg shadow-xl text-sm";
+      toast.textContent = `文件大小超过限制（最大 20MB），当前文件：${formatFileSize(file.size)}`;
+      toast.style.opacity = "0";
+      toast.style.transition = "opacity 0.3s";
+      document.body.appendChild(toast);
+      setTimeout(() => { toast.style.opacity = "1"; }, 10);
+      setTimeout(() => {
+        toast.style.opacity = "0";
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+      return;
+    }
+
     // 生成临时ID
     const tempId = `${Date.now()}-${Math.random()}`;
 
@@ -70,16 +87,35 @@ export function FileUpload({ type }: FileUploadProps) {
 
       const data = await response.json();
 
-      // 记录上传响应数据
-      console.log("文件上传响应数据:", {
-        fileName: file.name,
-        response: data,
-        file_id: data.file_id,
-        success: data.success,
-      });
+      // 记录上传响应数据（仅开发环境）
+      if (process.env.NODE_ENV === 'development') {
+        console.log("文件上传响应数据:", {
+          fileName: file.name,
+          response: data,
+          file_id: data.file_id,
+          success: data.success,
+        });
+      }
 
       if (!response.ok || !data.success) {
-        throw new Error(data.message || "上传失败");
+        // 区分不同类型的错误
+        let errorMessage = "上传失败";
+        if (!response.ok) {
+          if (response.status === 401) {
+            errorMessage = "认证失败，请检查API Token";
+          } else if (response.status === 413) {
+            errorMessage = "文件过大，请选择小于 20MB 的文件";
+          } else if (response.status >= 500) {
+            errorMessage = "服务器错误，请稍后重试";
+          } else if (data.error_source === "扣子API") {
+            errorMessage = `扣子API错误: ${data.message || "未知错误"}`;
+          } else {
+            errorMessage = data.message || `上传失败 (${response.status})`;
+          }
+        } else {
+          errorMessage = data.message || "上传失败";
+        }
+        throw new Error(errorMessage);
       }
 
       // 更新文件信息（创建新对象）
@@ -90,23 +126,32 @@ export function FileUpload({ type }: FileUploadProps) {
         uploadStatus: "success" as const,
       };
 
-      // 记录更新后的文件信息
-      console.log("更新文件信息:", {
-        fileName: file.name,
-        fileId: updatedFileInfo.file_id,
-        city: updatedFileInfo.city,
-        type: updatedFileInfo.type,
-        fullInfo: updatedFileInfo,
-      });
+      // 记录更新后的文件信息（仅开发环境）
+      if (process.env.NODE_ENV === 'development') {
+        console.log("更新文件信息:", {
+          fileName: file.name,
+          fileId: updatedFileInfo.file_id,
+          city: updatedFileInfo.city,
+          type: updatedFileInfo.type,
+          fullInfo: updatedFileInfo,
+        });
+      }
 
       // 更新文件（通过重新添加覆盖）
       addFile(updatedFileInfo);
     } catch (error: any) {
       // 更新为错误状态（创建新对象）
+      let errorMessage = "上传失败";
+      if (error instanceof TypeError && error.message.includes("fetch")) {
+        errorMessage = "网络错误，请检查网络连接";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       const errorFileInfo = {
         ...fileInfo,
         uploadStatus: "error" as const,
-        error: error.message || "上传失败",
+        error: errorMessage,
       };
       addFile(errorFileInfo);
     }

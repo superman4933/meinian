@@ -2,18 +2,19 @@
 
 import { useState, Fragment, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { useFileContext, ComparisonRow, ComparisonStructuredData } from "@/contexts/file-context";
+import { useFileContext, ComparisonRow, ComparisonStructuredData, FileInfo } from "@/contexts/file-context";
 import { formatFileSize } from "@/lib/city-matcher";
 import { getCozeTokenClient, getPolicyPrompt } from "@/lib/coze-config";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 // Toast提示工具函数
-function showToast(message: string) {
+function showToast(message: string, type: "success" | "error" | "info" = "info") {
   if (typeof window === "undefined") return;
   
   const toast = document.createElement("div");
-  toast.className = "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-slate-900 text-white px-6 py-4 rounded-lg shadow-xl text-sm";
+  const bgColor = type === "success" ? "bg-emerald-500" : type === "error" ? "bg-red-500" : "bg-slate-900";
+  toast.className = `fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] ${bgColor} text-white px-6 py-4 rounded-lg shadow-xl text-sm`;
   toast.textContent = message;
   toast.style.opacity = "0";
   toast.style.transition = "opacity 0.3s";
@@ -40,7 +41,7 @@ function FileDisplay({
   onPreview,
   onUpload,
 }: {
-  file: any;
+  file: FileInfo | null;
   type: "thisYear" | "lastYear";
   onDelete: () => void;
   onPreview: () => void;
@@ -205,7 +206,7 @@ function PreviewRow({
     const handleCopy = async () => {
       try {
         await navigator.clipboard.writeText(markdownContent);
-        alert("对比结果已复制到剪贴板");
+        showToast("对比结果已复制到剪贴板", "success");
       } catch (err) {
         // 降级方案
         const textArea = document.createElement("textarea");
@@ -214,13 +215,13 @@ function PreviewRow({
         textArea.select();
         document.execCommand("copy");
         document.body.removeChild(textArea);
-        alert("对比结果已复制到剪贴板");
+        showToast("对比结果已复制到剪贴板", "success");
       }
     };
 
     // 导出PDF（功能暂时移除）
     const handleExportPDF = () => {
-      alert("PDF导出功能暂时不可用，正在优化中");
+      showToast("PDF导出功能暂时不可用，正在优化中", "info");
     };
 
 
@@ -643,7 +644,7 @@ function DetailModal({
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(markdownContent);
-      alert("对比结果已复制到剪贴板");
+      showToast("对比结果已复制到剪贴板", "success");
     } catch (err) {
       const textArea = document.createElement("textarea");
       textArea.value = markdownContent;
@@ -651,12 +652,12 @@ function DetailModal({
       textArea.select();
       document.execCommand("copy");
       document.body.removeChild(textArea);
-      alert("对比结果已复制到剪贴板");
+      showToast("对比结果已复制到剪贴板", "success");
     }
   };
 
   const handleExportPDF = () => {
-    alert("PDF导出功能暂时不可用，正在优化中");
+    showToast("PDF导出功能暂时不可用，正在优化中", "info");
   };
 
   return (
@@ -804,11 +805,11 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
     }
   };
 
-  const handleFilePreview = (file: any) => {
+  const handleFilePreview = (file: FileInfo) => {
     if (file.url) {
       window.open(file.url, "_blank");
     } else {
-      alert("文件预览链接不可用");
+      showToast("文件预览链接不可用", "error");
     }
   };
 
@@ -821,6 +822,13 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       if (!files || files.length === 0) return;
 
       const file = files[0];
+      
+      // 文件大小限制：20MB
+      const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+      if (file.size > MAX_FILE_SIZE) {
+        showToast(`文件大小超过限制（最大 20MB），当前文件：${formatFileSize(file.size)}`, "error");
+        return;
+      }
       
       // 生成临时ID
       const tempId = `${Date.now()}-${Math.random()}`;
@@ -862,16 +870,35 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
 
         const data = await response.json();
 
-        // 记录上传响应数据
-        console.log("对比列表文件上传响应数据:", {
-          fileName: file.name,
-          response: data,
-          file_id: data.file_id,
-          success: data.success,
-        });
+        // 记录上传响应数据（仅开发环境）
+        if (process.env.NODE_ENV === 'development') {
+          console.log("对比列表文件上传响应数据:", {
+            fileName: file.name,
+            response: data,
+            file_id: data.file_id,
+            success: data.success,
+          });
+        }
 
         if (!response.ok || !data.success) {
-          throw new Error(data.message || "上传失败");
+          // 区分不同类型的错误
+          let errorMessage = "上传失败";
+          if (!response.ok) {
+            if (response.status === 401) {
+              errorMessage = "认证失败，请检查API Token";
+            } else if (response.status === 413) {
+              errorMessage = "文件过大，请选择小于 20MB 的文件";
+            } else if (response.status >= 500) {
+              errorMessage = "服务器错误，请稍后重试";
+            } else if (data.error_source === "扣子API") {
+              errorMessage = `扣子API错误: ${data.message || "未知错误"}`;
+            } else {
+              errorMessage = data.message || `上传失败 (${response.status})`;
+            }
+          } else {
+            errorMessage = data.message || "上传失败";
+          }
+          throw new Error(errorMessage);
         }
 
         // 更新文件信息（创建新对象）
@@ -882,23 +909,32 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           uploadStatus: "success" as const,
         };
 
-        // 记录更新后的文件信息
-        console.log("对比列表更新文件信息:", {
-          fileName: file.name,
-          fileId: updatedFileInfo.file_id,
-          city: updatedFileInfo.city,
-          type: updatedFileInfo.type,
-          fullInfo: updatedFileInfo,
-        });
+        // 记录更新后的文件信息（仅开发环境）
+        if (process.env.NODE_ENV === 'development') {
+          console.log("对比列表更新文件信息:", {
+            fileName: file.name,
+            fileId: updatedFileInfo.file_id,
+            city: updatedFileInfo.city,
+            type: updatedFileInfo.type,
+            fullInfo: updatedFileInfo,
+          });
+        }
 
         // 更新文件（通过重新添加覆盖）
         addFile(updatedFileInfo);
       } catch (error: any) {
         // 更新为错误状态（创建新对象）
+        let errorMessage = "上传失败";
+        if (error instanceof TypeError && error.message.includes("fetch")) {
+          errorMessage = "网络错误，请检查网络连接";
+        } else if (error.message) {
+          errorMessage = error.message;
+        }
+        
         const errorFileInfo = {
           ...fileInfo,
           uploadStatus: "error" as const,
-          error: error.message || "上传失败",
+          error: errorMessage,
         };
         addFile(errorFileInfo);
       }
@@ -908,12 +944,12 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
 
   const handleCompare = async (row: ComparisonRow) => {
     if (!row.thisYearFile || !row.lastYearFile) {
-      alert("请先上传新年度和旧年度的文件");
+      showToast("请先上传新年度和旧年度的文件", "error");
       return;
     }
 
     if (!row.thisYearFile.file_id || !row.lastYearFile.file_id) {
-      alert("文件尚未上传完成，请稍候");
+      showToast("文件尚未上传完成，请稍候", "info");
       return;
     }
 
@@ -938,8 +974,9 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
 
       const data = await response.json();
 
-      // 记录对比接口的原始返回
-      console.log("政策单独对比 - 接口原始返回:", {
+      // 记录对比接口的原始返回（仅开发环境）
+      if (process.env.NODE_ENV === 'development') {
+        console.log("政策单独对比 - 接口原始返回:", {
         rowId: row.id,
         company: row.company,
         file1_id: row.lastYearFile.file_id,
@@ -951,18 +988,38 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         hasData: !!data.data,
         executeId: data.execute_id,
         debugUrl: data.debug_url,
-      });
-
-      if (!response.ok || !data.success) {
-        console.error("政策单独对比失败:", {
-          rowId: row.id,
-          error: data.message || "对比失败",
-          fullError: data,
         });
-        throw new Error(data.message || "对比失败");
       }
 
-      console.log("政策单独对比成功:", {
+      if (!response.ok || !data.success) {
+        // 区分不同类型的错误
+        let errorMessage = "对比失败";
+        if (!response.ok) {
+          if (response.status === 401) {
+            errorMessage = "认证失败，请检查API Token";
+          } else if (response.status >= 500) {
+            errorMessage = "服务器错误，请稍后重试";
+          } else if (data.error_source === "扣子API") {
+            errorMessage = `扣子API错误: ${data.message || "未知错误"}`;
+          } else {
+            errorMessage = data.message || `对比失败 (${response.status})`;
+          }
+        } else {
+          errorMessage = data.message || "对比失败";
+        }
+        
+        if (process.env.NODE_ENV === 'development') {
+          console.error("政策单独对比失败:", {
+            rowId: row.id,
+            error: errorMessage,
+            fullError: data,
+          });
+        }
+        throw new Error(errorMessage);
+      }
+
+      if (process.env.NODE_ENV === 'development') {
+        console.log("政策单独对比成功:", {
         rowId: row.id,
         company: row.company,
         resultData: data.data,
@@ -970,7 +1027,8 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         structured: data.structured,
         isJsonFormat: data.isJsonFormat,
         resultType: typeof data.data,
-      });
+        });
+      }
 
       // 保存结果（可能是结构化数据或原始内容）
       const resultContent = data.markdown || data.data || "对比完成";
@@ -1021,7 +1079,8 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         <div className="text-sm font-semibold">分公司文件对比列表（一行展示）</div>
       </div>
 
-      <div className="overflow-auto">
+      {/* 桌面端：表格布局 */}
+      <div className="hidden md:block overflow-auto">
         <table className="min-w-full text-left text-sm" style={{ tableLayout: 'fixed' }}>
           <thead className="bg-white text-slate-600">
             <tr className="border-b border-slate-200">
@@ -1126,7 +1185,8 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                           const hasLastYearFileId = !!(row.lastYearFile?.file_id);
                           
                           if (hasThisYear && hasLastYear) {
-                            console.log(`行 ${row.id} 文件状态检查:`, {
+                            if (process.env.NODE_ENV === 'development') {
+                              console.log(`行 ${row.id} 文件状态检查:`, {
                               company: row.company,
                               hasThisYearFile: hasThisYear,
                               hasLastYearFile: hasLastYear,
@@ -1135,7 +1195,8 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                               thisYearFile: row.thisYearFile,
                               lastYearFile: row.lastYearFile,
                               canCompare: hasThisYearFileId && hasLastYearFileId,
-                            });
+                              });
+                            }
                           }
                           
                           return hasThisYear && hasLastYear && hasThisYearFileId && hasLastYearFileId ? (
@@ -1148,7 +1209,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                                 政策对比
                               </button>
                               <button
-                                onClick={() => showToast("该功能正在开发中")}
+                                onClick={() => showToast("该功能正在开发中", "info")}
                                 className="rounded-xl border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100"
                               >
                                 佣金对比
@@ -1168,14 +1229,16 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                           ) : (
                             <button
                               onClick={() => {
-                                console.log("按钮被禁用，文件状态:", {
-                                  hasThisYear,
-                                  hasLastYear,
-                                  hasThisYearFileId,
-                                  hasLastYearFileId,
-                                  thisYearFile: row.thisYearFile,
-                                  lastYearFile: row.lastYearFile,
-                                });
+                                if (process.env.NODE_ENV === 'development') {
+                                  console.log("按钮被禁用，文件状态:", {
+                                    hasThisYear,
+                                    hasLastYear,
+                                    hasThisYearFileId,
+                                    hasLastYearFileId,
+                                    thisYearFile: row.thisYearFile,
+                                    lastYearFile: row.lastYearFile,
+                                  });
+                                }
                               }}
                               disabled={true}
                               className="rounded-xl bg-slate-200 px-3 py-1.5 text-xs text-slate-400 cursor-not-allowed"
@@ -1204,6 +1267,221 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
             )}
           </tbody>
         </table>
+      </div>
+
+      {/* 移动端：卡片布局 */}
+      <div className="md:hidden divide-y divide-slate-200">
+        {sortedComparisons.length === 0 ? (
+          <div className="px-4 py-8 text-center text-slate-400">
+            暂无文件，请先上传文件
+          </div>
+        ) : (
+          sortedComparisons.map((row) => {
+            const displayCompany = row.company.startsWith("未知_") ? "未知" : row.company;
+            const hasThisYear = !!row.thisYearFile;
+            const hasLastYear = !!row.lastYearFile;
+            const hasThisYearFileId = !!(row.thisYearFile?.file_id);
+            const hasLastYearFileId = !!(row.lastYearFile?.file_id);
+            const canCompare = hasThisYear && hasLastYear && hasThisYearFileId && hasLastYearFileId;
+
+            return (
+              <div key={row.id} className="p-4 space-y-3">
+                <div className="font-semibold text-sm">{displayCompany}</div>
+                
+                <div className="space-y-2">
+                  <div>
+                    <div className="text-xs text-slate-500 mb-1">旧年度文件</div>
+                    <FileDisplay
+                      file={row.lastYearFile}
+                      type="lastYear"
+                      onDelete={() => row.lastYearFile && handleFileDelete(row.lastYearFile.id)}
+                      onPreview={() => row.lastYearFile && handleFilePreview(row.lastYearFile)}
+                      onUpload={() => handleFileUpload(row.id, "lastYear")}
+                    />
+                  </div>
+                  
+                  <div>
+                    <div className="text-xs text-slate-500 mb-1">新年度文件</div>
+                    <FileDisplay
+                      file={row.thisYearFile}
+                      type="thisYear"
+                      onDelete={() => row.thisYearFile && handleFileDelete(row.thisYearFile.id)}
+                      onPreview={() => row.thisYearFile && handleFilePreview(row.thisYearFile)}
+                      onUpload={() => handleFileUpload(row.id, "thisYear")}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-xs text-slate-500 mb-1">对比状态</div>
+                  {row.comparisonStatus === "none" && (
+                    <span className="text-xs text-slate-500">未对比</span>
+                  )}
+                  {row.comparisonStatus === "comparing" && (
+                    <span className="inline-flex items-center gap-1 text-xs text-blue-600">
+                      <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      对比中
+                    </span>
+                  )}
+                  {row.comparisonStatus === "done" && (
+                    <span className="text-xs text-emerald-600">已完成</span>
+                  )}
+                  {row.comparisonStatus === "error" && (
+                    <span className="text-xs text-red-600">失败</span>
+                  )}
+                </div>
+
+                {row.comparisonStatus === "done" && (
+                  <div>
+                    <div className="text-xs text-slate-500 mb-1">对比结果</div>
+                    {row.comparisonStructured && row.isJsonFormat ? (
+                      <ComparisonResultDisplay
+                        structured={row.comparisonStructured}
+                        onExpandToggle={() => toggleCards(row.id)}
+                      />
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-600">对比完成</span>
+                        <button
+                          onClick={() => setDetailModal({ open: true, row })}
+                          className="text-xs text-blue-600 hover:text-blue-800"
+                        >
+                          查看详情
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div>
+                  <div className="text-xs text-slate-500 mb-1">操作</div>
+                  <div className="flex flex-wrap gap-2">
+                    {canCompare ? (
+                      <>
+                        <button
+                          onClick={() => handleCompare(row)}
+                          disabled={row.comparisonStatus === "comparing"}
+                          className="rounded-xl bg-slate-700 px-3 py-1.5 text-xs text-white hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          政策对比
+                        </button>
+                        <button
+                          onClick={() => showToast("该功能正在开发中", "info")}
+                          className="rounded-xl border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100"
+                        >
+                          佣金对比
+                        </button>
+                        {row.comparisonStructured && row.isJsonFormat && (
+                          <SummaryTooltip
+                            summary={row.comparisonStructured?.summary}
+                            rowId={row.id}
+                            onButtonClick={() => {
+                              if (row.comparisonStructured && row.isJsonFormat) {
+                                toggleCards(row.id);
+                              } else {
+                                setDetailModal({ open: true, row });
+                              }
+                            }}
+                          />
+                        )}
+                      </>
+                    ) : (
+                      <button
+                        disabled={true}
+                        className="rounded-xl bg-slate-200 px-3 py-1.5 text-xs text-slate-400 cursor-not-allowed"
+                      >
+                        政策对比
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 展开的卡片（移动端） */}
+                {expandedCards.has(row.id) && row.comparisonStructured && row.isJsonFormat && (
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-white p-4">
+                    {row.comparisonStructured.summary && (
+                      <div className="mb-4 pb-4 border-b border-slate-200">
+                        <div className="font-semibold mb-2 text-sm text-slate-700">摘要：</div>
+                        <div className="text-sm text-slate-600 leading-relaxed">{row.comparisonStructured.summary}</div>
+                      </div>
+                    )}
+                    <div className="flex flex-col gap-3 mb-3">
+                      {row.comparisonStructured.added.length > 0 && (
+                        <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50/50 p-3">
+                          <div className="font-semibold mb-2 text-sm text-emerald-700 flex items-center gap-2">
+                            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-200 text-emerald-800 text-xs font-bold">+</span>
+                            新增内容 ({row.comparisonStructured.added.length}项)
+                          </div>
+                          <ul className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto">
+                            {row.comparisonStructured.added.map((item, idx) => (
+                              <li key={idx} className="flex items-start gap-2">
+                                <span className="text-emerald-600 mt-0.5 flex-shrink-0">•</span>
+                                <span className="flex-1 break-words">{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {row.comparisonStructured.modified.length > 0 && (
+                        <div className="rounded-lg border-2 border-blue-200 bg-blue-50/50 p-3">
+                          <div className="font-semibold mb-2 text-sm text-blue-700 flex items-center gap-2">
+                            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-200 text-blue-800 text-xs font-bold">~</span>
+                            修改内容 ({row.comparisonStructured.modified.length}项)
+                          </div>
+                          <ul className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto">
+                            {row.comparisonStructured.modified.map((item, idx) => (
+                              <li key={idx} className="flex items-start gap-2">
+                                <span className="text-blue-600 mt-0.5 flex-shrink-0">•</span>
+                                <span className="flex-1 break-words">{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {row.comparisonStructured.deleted.length > 0 && (
+                        <div className="rounded-lg border-2 border-red-200 bg-red-50/50 p-3">
+                          <div className="font-semibold mb-2 text-sm text-red-700 flex items-center gap-2">
+                            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-200 text-red-800 text-xs font-bold">-</span>
+                            删除内容 ({row.comparisonStructured.deleted.length}项)
+                          </div>
+                          <ul className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto">
+                            {row.comparisonStructured.deleted.map((item, idx) => (
+                              <li key={idx} className="flex items-start gap-2">
+                                <span className="text-red-600 mt-0.5 flex-shrink-0">•</span>
+                                <span className="flex-1 break-words">{item}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex justify-end">
+                        <button
+                          onClick={() => toggleCards(row.id)}
+                          className="text-xs text-slate-600 hover:text-slate-800 px-3 py-1.5 rounded-lg border border-slate-300 hover:bg-slate-50"
+                        >
+                          收起
+                        </button>
+                      </div>
+                      <div className="flex justify-end">
+                        <button
+                          onClick={() => setDetailModal({ open: true, row })}
+                          className="text-xs text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg border border-blue-300 hover:bg-blue-50"
+                        >
+                          查看完整报告
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
       </div>
 
       <div className="border-t border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 flex items-center justify-between">
