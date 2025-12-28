@@ -5,9 +5,6 @@ import { useFileContext, ComparisonRow } from "@/contexts/file-context";
 import { formatFileSize } from "@/lib/city-matcher";
 import { getCozeTokenClient, getPolicyPrompt } from "@/lib/coze-config";
 import ReactMarkdown from "react-markdown";
-import { Document, Packer, Paragraph, TextRun, HeadingLevel } from "docx";
-import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
 
 function FileDisplay({
   file,
@@ -195,210 +192,11 @@ function PreviewRow({
       }
     };
 
-    // 导出PDF
-    const handleExportPDF = async () => {
-      try {
-        // 创建一个临时的div来渲染markdown内容为HTML
-        const tempDiv = document.createElement("div");
-        tempDiv.style.width = "800px";
-        tempDiv.style.padding = "40px";
-        tempDiv.style.backgroundColor = "white";
-        tempDiv.style.fontFamily = "'Microsoft YaHei', 'SimHei', 'PingFang SC', Arial, sans-serif";
-        tempDiv.style.fontSize = "14px";
-        tempDiv.style.lineHeight = "1.8";
-        tempDiv.style.color = "#333";
-        tempDiv.style.position = "absolute";
-        tempDiv.style.left = "-9999px";
-        tempDiv.style.top = "0";
-        tempDiv.style.whiteSpace = "pre-wrap";
-        tempDiv.style.wordWrap = "break-word";
-        
-        // 将markdown转换为简单的HTML（处理基本格式）
-        let htmlContent = markdownContent
-          // 处理标题
-          .replace(/^### (.*$)/gim, '<h3 style="font-size: 18px; font-weight: bold; margin-top: 16px; margin-bottom: 8px;">$1</h3>')
-          .replace(/^## (.*$)/gim, '<h2 style="font-size: 20px; font-weight: bold; margin-top: 18px; margin-bottom: 10px;">$1</h2>')
-          .replace(/^# (.*$)/gim, '<h1 style="font-size: 24px; font-weight: bold; margin-top: 20px; margin-bottom: 12px;">$1</h1>')
-          // 处理加粗
-          .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
-          // 处理斜体
-          .replace(/\*(.*?)\*/gim, '<em>$1</em>');
-        
-        // 处理列表
-        const lines = htmlContent.split('\n');
-        let inList = false;
-        htmlContent = lines.map((line, index) => {
-          const trimmed = line.trim();
-          if (trimmed === '') {
-            if (inList) {
-              inList = false;
-              return '</ul><br>';
-            }
-            return '<br>';
-          }
-          if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-            if (!inList) {
-              inList = true;
-              return '<ul style="margin-left: 20px; margin-bottom: 12px;"><li style="margin-bottom: 6px;">' + trimmed.substring(2) + '</li>';
-            }
-            return '<li style="margin-bottom: 6px;">' + trimmed.substring(2) + '</li>';
-          }
-          if (inList) {
-            inList = false;
-            const result = '</ul><p style="margin-bottom: 12px;">' + line + '</p>';
-            return result;
-          }
-          if (line.startsWith('<h') || line.startsWith('</h')) {
-            return line;
-          }
-          return '<p style="margin-bottom: 12px;">' + line + '</p>';
-        }).join('');
-        
-        if (inList) {
-          htmlContent += '</ul>';
-        }
-        
-        tempDiv.innerHTML = htmlContent;
-        document.body.appendChild(tempDiv);
-        
-        // 等待渲染完成
-        await new Promise(resolve => setTimeout(resolve, 300));
-        
-        // 使用html2canvas转换为图片
-        const canvas = await html2canvas(tempDiv, {
-          scale: 2,
-          useCORS: true,
-          logging: false,
-          backgroundColor: "#ffffff",
-        });
-        
-        const imgData = canvas.toDataURL("image/png");
-        
-        // 计算PDF尺寸
-        const imgWidth = 210; // A4宽度（mm）
-        const pageHeight = 297; // A4高度（mm）
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
-        let heightLeft = imgHeight;
-        
-        const pdf = new jsPDF("p", "mm", "a4");
-        let position = 0;
-        
-        // 添加第一页
-        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
-        
-        // 如果内容超过一页，添加新页
-        while (heightLeft > 0) {
-          position = heightLeft - imgHeight;
-          pdf.addPage();
-          pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-          heightLeft -= pageHeight;
-        }
-        
-        // 清理临时元素
-        document.body.removeChild(tempDiv);
-        
-        const fileName = `${row.company || "对比结果"}_${new Date().toISOString().split("T")[0]}.pdf`;
-        pdf.save(fileName);
-      } catch (error) {
-        console.error("导出PDF失败:", error);
-        alert("导出PDF失败，请稍后重试");
-      }
+    // 导出PDF（功能暂时移除）
+    const handleExportPDF = () => {
+      alert("PDF导出功能暂时不可用，正在优化中");
     };
 
-    // 导出Word
-    const handleExportWord = async () => {
-      try {
-        // 将markdown转换为Word格式
-        const paragraphs: Paragraph[] = [];
-        const lines = markdownContent.split("\n");
-        
-        for (const line of lines) {
-          if (line.trim() === "") {
-            paragraphs.push(new Paragraph({ text: "" }));
-            continue;
-          }
-          
-          // 处理标题
-          if (line.startsWith("### ")) {
-            paragraphs.push(
-              new Paragraph({
-                text: line.replace(/^###\s+/, ""),
-                heading: HeadingLevel.HEADING_3,
-              })
-            );
-          } else if (line.startsWith("## ")) {
-            paragraphs.push(
-              new Paragraph({
-                text: line.replace(/^##\s+/, ""),
-                heading: HeadingLevel.HEADING_2,
-              })
-            );
-          } else if (line.startsWith("# ")) {
-            paragraphs.push(
-              new Paragraph({
-                text: line.replace(/^#\s+/, ""),
-                heading: HeadingLevel.HEADING_1,
-              })
-            );
-          } else if (line.startsWith("- ") || line.startsWith("* ")) {
-            // 列表项
-            paragraphs.push(
-              new Paragraph({
-                text: line.replace(/^[-*]\s+/, ""),
-                bullet: { level: 0 },
-              })
-            );
-          } else {
-            // 普通段落，处理加粗
-            const textRuns: TextRun[] = [];
-            let currentText = line;
-            let boldRegex = /\*\*(.*?)\*\*/g;
-            let match;
-            let lastIndex = 0;
-            
-            while ((match = boldRegex.exec(line)) !== null) {
-              if (match.index > lastIndex) {
-                textRuns.push(new TextRun(line.substring(lastIndex, match.index)));
-              }
-              textRuns.push(new TextRun({ text: match[1], bold: true }));
-              lastIndex = match.index + match[0].length;
-            }
-            
-            if (lastIndex < line.length) {
-              textRuns.push(new TextRun(line.substring(lastIndex)));
-            }
-            
-            paragraphs.push(
-              new Paragraph({
-                children: textRuns.length > 0 ? textRuns : [new TextRun(line)],
-              })
-            );
-          }
-        }
-        
-        const doc = new Document({
-          sections: [
-            {
-              children: paragraphs,
-            },
-          ],
-        });
-        
-        const blob = await Packer.toBlob(doc);
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `${row.company || "对比结果"}_${new Date().toISOString().split("T")[0]}.docx`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      } catch (error) {
-        console.error("导出Word失败:", error);
-        alert("导出Word失败，请稍后重试");
-      }
-    };
 
     return (
       <tr className="bg-slate-50/50">
@@ -417,28 +215,16 @@ function PreviewRow({
                   </svg>
                   复制
                 </button>
-                <div className="relative group">
-                  <button className="text-xs text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors flex items-center gap-1">
-                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    下载
-                  </button>
-                  <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 min-w-[120px]">
-                    <button
-                      onClick={handleExportPDF}
-                      className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 rounded-t-lg"
-                    >
-                      导出PDF
-                    </button>
-                    <button
-                      onClick={handleExportWord}
-                      className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 rounded-b-lg"
-                    >
-                      导出Word
-                    </button>
-                  </div>
-                </div>
+                <button
+                  onClick={handleExportPDF}
+                  className="text-xs text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors flex items-center gap-1"
+                  title="导出PDF"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  导出PDF
+                </button>
                 <button onClick={onToggle} className="text-xs text-slate-500 hover:text-slate-700">
                   收起
                 </button>
