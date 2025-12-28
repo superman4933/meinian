@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useFileContext } from "@/contexts/file-context";
-import { getCozeTokenClient } from "@/lib/coze-config";
+import { getCozeTokenClient, getPolicyPrompt } from "@/lib/coze-config";
 
 interface ToolbarProps {
   onFilterChange?: (filter: string) => void;
@@ -63,7 +63,7 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
               file1_id: row.lastYearFile!.file_id,
               file2_id: row.thisYearFile!.file_id,
               prompt: type === "policy" 
-                ? "请分析这两个政策文件的差异" 
+                ? getPolicyPrompt()
                 : "请分析这两个佣金文件的差异",
             }),
           });

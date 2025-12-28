@@ -3,8 +3,10 @@
 import { useState, Fragment } from "react";
 import { useFileContext, ComparisonRow } from "@/contexts/file-context";
 import { formatFileSize } from "@/lib/city-matcher";
-import { getCozeTokenClient } from "@/lib/coze-config";
+import { getCozeTokenClient, getPolicyPrompt } from "@/lib/coze-config";
 import ReactMarkdown from "react-markdown";
+import { Document, Packer, Paragraph, TextRun, HeadingLevel } from "docx";
+import jsPDF from "jspdf";
 
 function FileDisplay({
   file,
@@ -95,12 +97,6 @@ function FileDisplay({
     );
   }
 
-  // 截断文件名，最多显示两行
-  const truncateFileName = (fileName: string, maxLength: number = 30) => {
-    if (fileName.length <= maxLength) return fileName;
-    return fileName.substring(0, maxLength) + "...";
-  };
-
   return (
     <div className="flex items-start gap-2 group">
       <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-slate-100 flex-shrink-0 text-xs">📄</span>
@@ -181,15 +177,190 @@ function PreviewRow({
       }
     }
 
+    // 复制功能
+    const handleCopy = async () => {
+      try {
+        await navigator.clipboard.writeText(markdownContent);
+        alert("对比结果已复制到剪贴板");
+      } catch (err) {
+        // 降级方案
+        const textArea = document.createElement("textarea");
+        textArea.value = markdownContent;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textArea);
+        alert("对比结果已复制到剪贴板");
+      }
+    };
+
+    // 导出PDF
+    const handleExportPDF = async () => {
+      try {
+        const pdf = new jsPDF();
+        const lines = markdownContent.split("\n");
+        let y = 20;
+        pdf.setFontSize(12);
+        
+        lines.forEach((line) => {
+          if (y > 280) {
+            pdf.addPage();
+            y = 20;
+          }
+          // 处理长行，自动换行
+          const maxWidth = 190;
+          const splitLines = pdf.splitTextToSize(line, maxWidth);
+          splitLines.forEach((splitLine: string) => {
+            pdf.text(splitLine, 10, y);
+            y += 7;
+          });
+        });
+        
+        const fileName = `${row.company || "对比结果"}_${new Date().toISOString().split("T")[0]}.pdf`;
+        pdf.save(fileName);
+      } catch (error) {
+        console.error("导出PDF失败:", error);
+        alert("导出PDF失败，请稍后重试");
+      }
+    };
+
+    // 导出Word
+    const handleExportWord = async () => {
+      try {
+        // 将markdown转换为Word格式
+        const paragraphs: Paragraph[] = [];
+        const lines = markdownContent.split("\n");
+        
+        for (const line of lines) {
+          if (line.trim() === "") {
+            paragraphs.push(new Paragraph({ text: "" }));
+            continue;
+          }
+          
+          // 处理标题
+          if (line.startsWith("### ")) {
+            paragraphs.push(
+              new Paragraph({
+                text: line.replace(/^###\s+/, ""),
+                heading: HeadingLevel.HEADING_3,
+              })
+            );
+          } else if (line.startsWith("## ")) {
+            paragraphs.push(
+              new Paragraph({
+                text: line.replace(/^##\s+/, ""),
+                heading: HeadingLevel.HEADING_2,
+              })
+            );
+          } else if (line.startsWith("# ")) {
+            paragraphs.push(
+              new Paragraph({
+                text: line.replace(/^#\s+/, ""),
+                heading: HeadingLevel.HEADING_1,
+              })
+            );
+          } else if (line.startsWith("- ") || line.startsWith("* ")) {
+            // 列表项
+            paragraphs.push(
+              new Paragraph({
+                text: line.replace(/^[-*]\s+/, ""),
+                bullet: { level: 0 },
+              })
+            );
+          } else {
+            // 普通段落，处理加粗
+            const textRuns: TextRun[] = [];
+            let currentText = line;
+            let boldRegex = /\*\*(.*?)\*\*/g;
+            let match;
+            let lastIndex = 0;
+            
+            while ((match = boldRegex.exec(line)) !== null) {
+              if (match.index > lastIndex) {
+                textRuns.push(new TextRun(line.substring(lastIndex, match.index)));
+              }
+              textRuns.push(new TextRun({ text: match[1], bold: true }));
+              lastIndex = match.index + match[0].length;
+            }
+            
+            if (lastIndex < line.length) {
+              textRuns.push(new TextRun(line.substring(lastIndex)));
+            }
+            
+            paragraphs.push(
+              new Paragraph({
+                children: textRuns.length > 0 ? textRuns : [new TextRun(line)],
+              })
+            );
+          }
+        }
+        
+        const doc = new Document({
+          sections: [
+            {
+              children: paragraphs,
+            },
+          ],
+        });
+        
+        const blob = await Packer.toBlob(doc);
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${row.company || "对比结果"}_${new Date().toISOString().split("T")[0]}.docx`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } catch (error) {
+        console.error("导出Word失败:", error);
+        alert("导出Word失败，请稍后重试");
+      }
+    };
+
     return (
       <tr className="bg-slate-50/50">
         <td colSpan={6} className="px-4 py-4">
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold">对比结果</h3>
-              <button onClick={onToggle} className="text-xs text-slate-500 hover:text-slate-700">
-                收起
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleCopy}
+                  className="text-xs text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors flex items-center gap-1"
+                  title="复制对比结果"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  复制
+                </button>
+                <div className="relative group">
+                  <button className="text-xs text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors flex items-center gap-1">
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    下载
+                  </button>
+                  <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 min-w-[120px]">
+                    <button
+                      onClick={handleExportPDF}
+                      className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 rounded-t-lg"
+                    >
+                      导出PDF
+                    </button>
+                    <button
+                      onClick={handleExportWord}
+                      className="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 rounded-b-lg"
+                    >
+                      导出Word
+                    </button>
+                  </div>
+                </div>
+                <button onClick={onToggle} className="text-xs text-slate-500 hover:text-slate-700">
+                  收起
+                </button>
+              </div>
             </div>
             <div className="prose prose-sm max-w-none text-slate-700">
               <ReactMarkdown
@@ -397,7 +568,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         body: JSON.stringify({
           file1_id: row.lastYearFile.file_id,
           file2_id: row.thisYearFile.file_id,
-          prompt: "请分析这两个政策文件的差异",
+          prompt: getPolicyPrompt(),
         }),
       });
 

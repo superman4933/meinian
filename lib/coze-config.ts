@@ -59,3 +59,37 @@ export function clearCozeToken(): void {
   }
 }
 
+// 默认政策对比提示词
+const DEFAULT_POLICY_PROMPT = "请分析这两个政策文件的差异";
+
+/**
+ * 获取政策对比提示词（客户端使用）
+ */
+export function getPolicyPrompt(): string {
+  if (typeof window !== "undefined") {
+    const savedPrompt = localStorage.getItem("policy_compare_prompt");
+    if (savedPrompt) {
+      return savedPrompt;
+    }
+  }
+  return DEFAULT_POLICY_PROMPT;
+}
+
+/**
+ * 保存政策对比提示词到localStorage
+ */
+export function savePolicyPrompt(prompt: string): void {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("policy_compare_prompt", prompt);
+  }
+}
+
+/**
+ * 清除保存的提示词
+ */
+export function clearPolicyPrompt(): void {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem("policy_compare_prompt");
+  }
+}
+
