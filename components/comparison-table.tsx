@@ -1,87 +1,159 @@
 "use client";
 
 import { useState, Fragment } from "react";
+import { useFileContext, ComparisonRow } from "@/contexts/file-context";
+import { formatFileSize } from "@/lib/city-matcher";
+import { getCozeTokenClient } from "@/lib/coze-config";
 
-interface ComparisonRow {
-  id: string;
-  company: string;
-  thisYearFile: {
-    name: string;
-    size: string;
+function FileDisplay({
+  file,
+  type,
+  onDelete,
+  onPreview,
+  onUpload,
+}: {
+  file: any;
+  type: "thisYear" | "lastYear";
+  onDelete: () => void;
+  onPreview: () => void;
+  onUpload: () => void;
+}) {
+  if (!file) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100">—</span>
+        <div className="flex-1">
+          <div className="font-medium text-slate-400">未上传</div>
+          <button
+            onClick={onUpload}
+            className="text-xs text-blue-600 hover:text-blue-800 mt-1"
+          >
+            点击上传
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (file.uploadStatus === "uploading") {
+    return (
+      <div className="flex items-start gap-2">
+        <div className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-blue-100 flex-shrink-0">
+          <svg className="animate-spin h-4 w-4 text-blue-600" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        </div>
+        <div className="flex-1 min-w-0" style={{ width: "200px", maxWidth: "200px" }}>
+          <div 
+            className="font-medium text-sm leading-tight"
+            style={{
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+              wordBreak: "break-word",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {file.name}
+          </div>
+          <div className="text-xs text-blue-600 mt-1">上传中...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (file.uploadStatus === "error") {
+    return (
+      <div className="flex items-start gap-2">
+        <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-red-100 flex-shrink-0">⚠️</span>
+        <div className="flex-1 min-w-0" style={{ width: "200px", maxWidth: "200px" }}>
+          <div 
+            className="font-medium text-red-600 text-sm leading-tight"
+            style={{
+              display: "-webkit-box",
+              WebkitLineClamp: 2,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+              wordBreak: "break-word",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {file.name}
+          </div>
+          <div className="text-xs text-red-500 mt-1">{file.error || "上传失败"}</div>
+        </div>
+        <button
+          onClick={onDelete}
+          className="text-xs text-red-600 hover:text-red-800 px-2 py-1 flex-shrink-0"
+        >
+          删除
+        </button>
+      </div>
+    );
+  }
+
+  // 截断文件名，最多显示两行
+  const truncateFileName = (fileName: string, maxLength: number = 30) => {
+    if (fileName.length <= maxLength) return fileName;
+    return fileName.substring(0, maxLength) + "...";
   };
-  lastYearFile: {
-    name: string;
-    size: string;
-  } | null;
-  status: "ready" | "missing" | "done";
-  stats: {
-    added?: number;
-    deleted?: number;
-    modified?: number;
-    highRisk?: number;
-  };
+
+  return (
+    <div className="flex items-start gap-2 group">
+      <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 flex-shrink-0">📄</span>
+      <div className="flex-1 min-w-0" style={{ width: "200px", maxWidth: "200px" }}>
+        <button
+          onClick={onPreview}
+          className="font-medium text-left hover:text-blue-600 block w-full text-sm leading-tight"
+          title={file.name}
+          style={{
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+            wordBreak: "break-word",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {file.name}
+        </button>
+        <div className="text-xs text-slate-500 mt-1">{file.sizeFormatted}</div>
+      </div>
+      <button
+        onClick={onDelete}
+        className="text-xs text-slate-400 hover:text-red-600 px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+        title="删除文件"
+      >
+        删除
+      </button>
+    </div>
+  );
 }
 
-const mockData: ComparisonRow[] = [
-  {
-    id: "shanghai",
-    company: "上海分公司",
-    thisYearFile: { name: "上海_今年.pdf", size: "2.3MB" },
-    lastYearFile: { name: "上海_去年.docx", size: "640KB" },
-    status: "ready",
-    stats: { added: 18, deleted: 6, modified: 12, highRisk: 2 },
-  },
-  {
-    id: "shenzhen",
-    company: "深圳分公司",
-    thisYearFile: { name: "深圳_今年.pdf", size: "1.1MB" },
-    lastYearFile: null,
-    status: "missing",
-    stats: {},
-  },
-  {
-    id: "guangzhou",
-    company: "广州分公司",
-    thisYearFile: { name: "广州_今年.docx", size: "520KB" },
-    lastYearFile: { name: "广州_去年.pdf", size: "1.9MB" },
-    status: "done",
-    stats: { added: 3, deleted: 1, modified: 2, highRisk: 0 },
-  },
-];
-
-function PreviewRow({ row, isOpen, onToggle }: { row: ComparisonRow; isOpen: boolean; onToggle: () => void }) {
+function PreviewRow({
+  row,
+  isOpen,
+  onToggle,
+}: {
+  row: ComparisonRow;
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
   if (!isOpen) return null;
 
-  if (row.status === "ready") {
+  if (row.comparisonStatus === "comparing") {
     return (
       <tr className="bg-slate-50/50">
-        <td colSpan={5} className="px-4 py-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold">文件信息预览</h3>
-              <button onClick={onToggle} className="text-xs text-slate-500 hover:text-slate-700">
-                收起
-              </button>
-            </div>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="mb-2 text-xs font-medium text-slate-600">今年文件</div>
-                <div className="text-xs text-slate-700">文件名：{row.thisYearFile.name}</div>
-                <div className="text-xs text-slate-500">大小：{row.thisYearFile.size} | 上传时间：2024-12-25 10:15</div>
-              </div>
-              {row.lastYearFile && (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                  <div className="mb-2 text-xs font-medium text-slate-600">去年文件</div>
-                  <div className="text-xs text-slate-700">文件名：{row.lastYearFile.name}</div>
-                  <div className="text-xs text-slate-500">大小：{row.lastYearFile.size} | 上传时间：2023-12-20 09:30</div>
-                </div>
-              )}
-            </div>
-            <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-              <div className="text-xs font-medium text-amber-800">提示：文件已就绪，可进行对比</div>
-              <div className="mt-1 text-xs text-amber-700">
-                预计对比结果：新增 {row.stats.added ?? 0} 条 | 删除 {row.stats.deleted ?? 0} 条 | 修改 {row.stats.modified ?? 0} 条 | 高风险 {row.stats.highRisk ?? 0} 条
-              </div>
+        <td colSpan={6} className="px-4 py-4">
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-center">
+            <div className="inline-flex items-center gap-2">
+              <svg className="animate-spin h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span className="text-sm font-medium text-blue-700">对比中，请稍候...</span>
             </div>
           </div>
         </td>
@@ -89,43 +161,36 @@ function PreviewRow({ row, isOpen, onToggle }: { row: ComparisonRow; isOpen: boo
     );
   }
 
-  if (row.status === "done") {
+  if (row.comparisonStatus === "done" && row.comparisonResult) {
     return (
       <tr className="bg-slate-50/50">
-        <td colSpan={5} className="px-4 py-4">
+        <td colSpan={6} className="px-4 py-4">
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold">对比详情预览</h3>
+              <h3 className="text-sm font-semibold">对比结果</h3>
               <button onClick={onToggle} className="text-xs text-slate-500 hover:text-slate-700">
                 收起
               </button>
             </div>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="mb-2 text-xs font-medium text-slate-600">新增内容</div>
-                <div className="space-y-1 text-xs">
-                  <div className="rounded bg-emerald-50 px-2 py-1 text-emerald-700">• 新增条款：员工福利政策（第3条）</div>
-                  <div className="rounded bg-emerald-50 px-2 py-1 text-emerald-700">• 新增条款：绩效考核标准（第8条）</div>
-                  <div className="rounded bg-emerald-50 px-2 py-1 text-emerald-700">• 新增条款：培训管理制度（第12条）</div>
-                </div>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="mb-2 text-xs font-medium text-slate-600">删除内容</div>
-                <div className="space-y-1 text-xs">
-                  <div className="rounded bg-rose-50 px-2 py-1 text-rose-700">• 删除条款：旧版考勤制度（原第5条）</div>
-                </div>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-                <div className="mb-2 text-xs font-medium text-slate-600">修改内容</div>
-                <div className="space-y-1 text-xs">
-                  <div className="rounded bg-amber-50 px-2 py-1 text-amber-700">• 修改：请假流程（第6条）</div>
-                  <div className="rounded bg-amber-50 px-2 py-1 text-amber-700">• 修改：薪资结构说明（第9条）</div>
-                </div>
-              </div>
+            <div className="text-sm text-slate-700 whitespace-pre-wrap">
+              {typeof row.comparisonResult === "string"
+                ? row.comparisonResult
+                : JSON.stringify(row.comparisonResult, null, 2)}
             </div>
-            <div className="mt-3 flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2">
-              <span className="text-xs text-slate-600">对比时间：2024-12-25 14:30</span>
-              <button className="rounded-lg bg-slate-900 px-3 py-1 text-xs text-white hover:bg-slate-800">查看完整报告</button>
+          </div>
+        </td>
+      </tr>
+    );
+  }
+
+  if (row.comparisonStatus === "error") {
+    return (
+      <tr className="bg-slate-50/50">
+        <td colSpan={6} className="px-4 py-4">
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+            <div className="text-sm text-red-700">
+              <strong>对比失败：</strong>
+              {row.comparisonError || "未知错误"}
             </div>
           </div>
         </td>
@@ -137,6 +202,7 @@ function PreviewRow({ row, isOpen, onToggle }: { row: ComparisonRow; isOpen: boo
 }
 
 export function ComparisonTable() {
+  const { comparisons, removeFile, updateComparison, addFile } = useFileContext();
   const [openPreviews, setOpenPreviews] = useState<Set<string>>(new Set());
 
   function togglePreview(id: string) {
@@ -151,6 +217,170 @@ export function ComparisonTable() {
     });
   }
 
+  const handleFileDelete = (fileId: string) => {
+    if (confirm("确定要删除这个文件吗？")) {
+      removeFile(fileId);
+    }
+  };
+
+  const handleFilePreview = (file: any) => {
+    if (file.url) {
+      window.open(file.url, "_blank");
+    } else {
+      alert("文件预览链接不可用");
+    }
+  };
+
+  const handleFileUpload = async (rowId: string, type: "thisYear" | "lastYear") => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".pdf,.doc,.docx";
+    input.onchange = async (e) => {
+      const files = (e.target as HTMLInputElement).files;
+      if (!files || files.length === 0) return;
+
+      const file = files[0];
+      
+      // 生成临时ID
+      const tempId = `${Date.now()}-${Math.random()}`;
+      
+      // 直接使用当前行的city，不进行城市匹配校验
+      const city = rowId;
+
+      // 创建文件信息
+      const fileInfo = {
+        id: tempId,
+        file_id: "",
+        name: file.name,
+        size: file.size,
+        sizeFormatted: formatFileSize(file.size),
+        city: city,
+        type: type,
+        uploadTime: new Date(),
+        uploadStatus: "uploading" as const,
+      };
+
+      // 先添加到列表显示上传中状态
+      addFile(fileInfo);
+
+      try {
+        // 上传到扣子
+        const formData = new FormData();
+        formData.append("file", file);
+
+        // 获取token并添加到请求头
+        const token = getCozeTokenClient();
+        
+        const response = await fetch("/api/upload", {
+          method: "POST",
+          headers: {
+            "x-coze-token": token,
+          },
+          body: formData,
+        });
+
+        const data = await response.json();
+
+        // 记录上传响应数据
+        console.log("对比列表文件上传响应数据:", {
+          fileName: file.name,
+          response: data,
+          file_id: data.file_id,
+          success: data.success,
+        });
+
+        if (!response.ok || !data.success) {
+          throw new Error(data.message || "上传失败");
+        }
+
+        // 更新文件信息（创建新对象）
+        const updatedFileInfo = {
+          ...fileInfo,
+          file_id: data.file_id || "",
+          url: data.url || null,
+          uploadStatus: "success" as const,
+        };
+
+        // 记录更新后的文件信息
+        console.log("对比列表更新文件信息:", {
+          fileName: file.name,
+          fileId: updatedFileInfo.file_id,
+          city: updatedFileInfo.city,
+          type: updatedFileInfo.type,
+          fullInfo: updatedFileInfo,
+        });
+
+        // 更新文件（通过重新添加覆盖）
+        addFile(updatedFileInfo);
+      } catch (error: any) {
+        // 更新为错误状态（创建新对象）
+        const errorFileInfo = {
+          ...fileInfo,
+          uploadStatus: "error" as const,
+          error: error.message || "上传失败",
+        };
+        addFile(errorFileInfo);
+      }
+    };
+    input.click();
+  };
+
+  const handleCompare = async (row: ComparisonRow) => {
+    if (!row.thisYearFile || !row.lastYearFile) {
+      alert("请先上传今年和去年的文件");
+      return;
+    }
+
+    if (!row.thisYearFile.file_id || !row.lastYearFile.file_id) {
+      alert("文件尚未上传完成，请稍候");
+      return;
+    }
+
+    updateComparison(row.id, { comparisonStatus: "comparing" });
+    togglePreview(row.id);
+
+    try {
+      // 获取token并添加到请求头
+      const token = getCozeTokenClient();
+      
+      const response = await fetch("/api/compare", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-coze-token": token,
+        },
+        body: JSON.stringify({
+          file1_id: row.lastYearFile.file_id,
+          file2_id: row.thisYearFile.file_id,
+          prompt: "请分析这两个政策文件的差异",
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "对比失败");
+      }
+
+      updateComparison(row.id, {
+        comparisonStatus: "done",
+        comparisonResult: data.data || "对比完成",
+        comparisonError: undefined,
+      });
+    } catch (error: any) {
+      updateComparison(row.id, {
+        comparisonStatus: "error",
+        comparisonError: error.message || "对比失败",
+        comparisonResult: undefined,
+      });
+    }
+  };
+
+  // 按分公司名称排序
+  const sortedComparisons = [...comparisons].sort((a, b) =>
+    a.company.localeCompare(b.company, "zh-CN")
+  );
+
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="bg-slate-50 px-4 py-3 flex items-center justify-between">
@@ -162,143 +392,166 @@ export function ComparisonTable() {
           <thead className="bg-white text-slate-600">
             <tr className="border-b border-slate-200">
               <th className="px-4 py-3 font-medium">分公司</th>
-              <th className="px-4 py-3 font-medium">今年文件</th>
-              <th className="px-4 py-3 font-medium">去年文件</th>
+              <th className="px-4 py-3 font-medium" style={{ width: "220px" }}>去年文件</th>
+              <th className="px-4 py-3 font-medium" style={{ width: "220px" }}>今年文件</th>
+              <th className="px-4 py-3 font-medium">对比状态</th>
               <th className="px-4 py-3 font-medium">对比结果（同一行）</th>
               <th className="px-4 py-3 font-medium text-right">操作</th>
             </tr>
           </thead>
 
           <tbody className="divide-y divide-slate-200 bg-white">
-            {mockData.map((row) => (
-              <Fragment key={row.id}>
-                <tr className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-medium whitespace-nowrap">{row.company}</td>
+            {sortedComparisons.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                  暂无文件，请先上传文件
+                </td>
+              </tr>
+            ) : (
+              sortedComparisons.map((row) => {
+                // 格式化分公司名称显示，如果是未知分公司（包含未知_ID格式），只显示"未知"
+                const displayCompany = row.company.startsWith("未知_") ? "未知" : row.company;
+                return (
+                  <Fragment key={row.id}>
+                    <tr className="hover:bg-slate-50">
+                      <td className="px-4 py-3 font-medium whitespace-nowrap">{displayCompany}</td>
 
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100">📄</span>
-                      <div>
-                        <div className="font-medium">{row.thisYearFile.name}</div>
-                        <div className="text-xs text-slate-500">{row.thisYearFile.size}</div>
+                    <td className="px-4 py-3" style={{ width: "220px" }}>
+                      <FileDisplay
+                        file={row.lastYearFile}
+                        type="lastYear"
+                        onDelete={() => row.lastYearFile && handleFileDelete(row.lastYearFile.id)}
+                        onPreview={() => row.lastYearFile && handleFilePreview(row.lastYearFile)}
+                        onUpload={() => handleFileUpload(row.id, "lastYear")}
+                      />
+                    </td>
+
+                    <td className="px-4 py-3" style={{ width: "220px" }}>
+                      <FileDisplay
+                        file={row.thisYearFile}
+                        type="thisYear"
+                        onDelete={() => row.thisYearFile && handleFileDelete(row.thisYearFile.id)}
+                        onPreview={() => row.thisYearFile && handleFilePreview(row.thisYearFile)}
+                        onUpload={() => handleFileUpload(row.id, "thisYear")}
+                      />
+                    </td>
+
+                    <td className="px-4 py-3">
+                      {row.comparisonStatus === "none" && (
+                        <span className="text-xs text-slate-500">未对比</span>
+                      )}
+                      {row.comparisonStatus === "comparing" && (
+                        <span className="inline-flex items-center gap-1 text-xs text-blue-600">
+                          <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          对比中
+                        </span>
+                      )}
+                      {row.comparisonStatus === "done" && (
+                        <span className="text-xs text-emerald-600">已完成</span>
+                      )}
+                      {row.comparisonStatus === "error" && (
+                        <span className="text-xs text-red-600">失败</span>
+                      )}
+                    </td>
+
+                    <td className="px-4 py-3">
+                      {row.comparisonStatus === "done" && (
+                        <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700">
+                          对比完成
+                        </span>
+                      )}
+                      {row.comparisonStatus === "error" && (
+                        <span className="rounded-full bg-red-50 px-2 py-1 text-xs text-red-700">
+                          对比失败
+                        </span>
+                      )}
+                      {row.comparisonStatus === "none" && (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
+                    </td>
+
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <div className="inline-flex gap-2">
+                        {(() => {
+                          // 调试日志：检查文件状态
+                          const hasThisYear = !!row.thisYearFile;
+                          const hasLastYear = !!row.lastYearFile;
+                          const hasThisYearFileId = !!(row.thisYearFile?.file_id);
+                          const hasLastYearFileId = !!(row.lastYearFile?.file_id);
+                          
+                          if (hasThisYear && hasLastYear) {
+                            console.log(`行 ${row.id} 文件状态检查:`, {
+                              company: row.company,
+                              hasThisYearFile: hasThisYear,
+                              hasLastYearFile: hasLastYear,
+                              thisYearFileId: row.thisYearFile?.file_id || "无",
+                              lastYearFileId: row.lastYearFile?.file_id || "无",
+                              thisYearFile: row.thisYearFile,
+                              lastYearFile: row.lastYearFile,
+                              canCompare: hasThisYearFileId && hasLastYearFileId,
+                            });
+                          }
+                          
+                          return hasThisYear && hasLastYear && hasThisYearFileId && hasLastYearFileId ? (
+                            <>
+                              <button
+                                onClick={() => handleCompare(row)}
+                                disabled={row.comparisonStatus === "comparing"}
+                                className="rounded-xl bg-slate-900 px-3 py-1.5 text-xs text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                政策单独对比
+                              </button>
+                              <button
+                                onClick={() => togglePreview(row.id)}
+                                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs hover:bg-slate-50"
+                              >
+                                查看详情
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                console.log("按钮被禁用，文件状态:", {
+                                  hasThisYear,
+                                  hasLastYear,
+                                  hasThisYearFileId,
+                                  hasLastYearFileId,
+                                  thisYearFile: row.thisYearFile,
+                                  lastYearFile: row.lastYearFile,
+                                });
+                              }}
+                              disabled={true}
+                              className="rounded-xl bg-slate-200 px-3 py-1.5 text-xs text-slate-400 cursor-not-allowed"
+                              title={`请先上传今年和去年的文件。状态：今年文件${hasThisYear ? "✓" : "✗"}，去年文件${hasLastYear ? "✓" : "✗"}，今年file_id${hasThisYearFileId ? "✓" : "✗"}，去年file_id${hasLastYearFileId ? "✓" : "✗"}`}
+                            >
+                              政策单独对比
+                            </button>
+                          );
+                        })()}
                       </div>
-                    </div>
-                  </td>
-
-                  <td className="px-4 py-3">
-                    {row.lastYearFile ? (
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100">📄</span>
-                        <div>
-                          <div className="font-medium">{row.lastYearFile.name}</div>
-                          <div className="text-xs text-slate-500">{row.lastYearFile.size}</div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2 text-slate-400">
-                        <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100">—</span>
-                        <div>
-                          <div className="font-medium">未上传</div>
-                          <div className="text-xs">请补齐去年文件</div>
-                        </div>
-                      </div>
-                    )}
-                  </td>
-
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {row.status === "ready" && (
-                        <>
-                          <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700">可比对</span>
-                          {row.stats.added !== undefined && row.stats.added > 0 && (
-                            <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">新增 {row.stats.added}</span>
-                          )}
-                          {row.stats.deleted !== undefined && row.stats.deleted > 0 && (
-                            <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">删除 {row.stats.deleted}</span>
-                          )}
-                          {row.stats.modified !== undefined && row.stats.modified > 0 && (
-                            <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">修改 {row.stats.modified}</span>
-                          )}
-                          {row.stats.highRisk !== undefined && (
-                            <span className={`rounded-full px-2 py-1 text-xs ${row.stats.highRisk > 0 ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"}`}>
-                              高风险 {row.stats.highRisk}
-                            </span>
-                          )}
-                        </>
-                      )}
-                      {row.status === "missing" && (
-                        <>
-                          <span className="rounded-full bg-rose-50 px-2 py-1 text-xs text-rose-700">缺文件</span>
-                          <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">结果：—</span>
-                        </>
-                      )}
-                      {row.status === "done" && (
-                        <>
-                          <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">已完成</span>
-                          {row.stats.added !== undefined && row.stats.added > 0 && (
-                            <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">新增 {row.stats.added}</span>
-                          )}
-                          {row.stats.deleted !== undefined && row.stats.deleted > 0 && (
-                            <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">删除 {row.stats.deleted}</span>
-                          )}
-                          {row.stats.modified !== undefined && row.stats.modified > 0 && (
-                            <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-700">修改 {row.stats.modified}</span>
-                          )}
-                          {row.stats.highRisk !== undefined && (
-                            <span className={`rounded-full px-2 py-1 text-xs ${row.stats.highRisk > 0 ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"}`}>
-                              高风险 {row.stats.highRisk}
-                            </span>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </td>
-
-                  <td className="px-4 py-3 text-right whitespace-nowrap">
-                    <div className="inline-flex gap-2">
-                      {row.status === "ready" && (
-                        <>
-                          <button className="rounded-xl bg-slate-900 px-3 py-1.5 text-xs text-white hover:bg-slate-800">单独对比（政策）</button>
-                          <button className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs hover:bg-slate-50">单独对比（佣金）</button>
-                          <button onClick={() => togglePreview(row.id)} className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs hover:bg-slate-50">
-                            查看详情
-                          </button>
-                        </>
-                      )}
-                      {row.status === "missing" && (
-                        <>
-                          <button className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-400 cursor-not-allowed">
-                            单独对比（政策）
-                          </button>
-                          <button className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-400 cursor-not-allowed">
-                            单独对比（佣金）
-                          </button>
-                        </>
-                      )}
-                      {row.status === "done" && (
-                        <>
-                          <button className="rounded-xl bg-slate-900 px-3 py-1.5 text-xs text-white hover:bg-slate-800">重新对比（政策）</button>
-                          <button className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs hover:bg-slate-50">重新对比（佣金）</button>
-                          <button onClick={() => togglePreview(row.id)} className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs hover:bg-slate-50">
-                            查看详情
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-                <PreviewRow key={`preview-${row.id}`} row={row} isOpen={openPreviews.has(row.id)} onToggle={() => togglePreview(row.id)} />
-              </Fragment>
-            ))}
+                    </td>
+                  </tr>
+                  <PreviewRow
+                    key={`preview-${row.id}`}
+                    row={row}
+                    isOpen={openPreviews.has(row.id)}
+                    onToggle={() => togglePreview(row.id)}
+                  />
+                  </Fragment>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>
 
       <div className="border-t border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 flex items-center justify-between">
         <span>提示：只有"今年+去年"齐全才可"单独比对 / 一键比对"。</span>
-        <span>共 300 家（示意：分页/滚动）</span>
+        <span>共 {sortedComparisons.length} 家分公司</span>
       </div>
     </section>
   );
 }
-

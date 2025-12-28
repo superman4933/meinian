@@ -6,6 +6,7 @@ import { FileUpload } from "@/components/file-upload";
 import { Toolbar } from "@/components/toolbar";
 import { ComparisonTable } from "@/components/comparison-table";
 import { Login } from "@/components/login";
+import { FileProvider } from "@/contexts/file-context";
 
 export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -93,7 +94,7 @@ export default function Home() {
 
   // 显示主页面
   return (
-    <>
+    <FileProvider>
       <Header username={username} onLogout={handleLogout} />
       <main className="mx-auto max-w-6xl px-4 py-6 space-y-4">
         {/* File Upload Areas */}
@@ -110,7 +111,7 @@ export default function Home() {
       <footer className="mx-auto max-w-6xl px-4 pb-10 text-xs text-slate-500">
         极简一行版：今年文件｜去年文件｜对比结果（同一行）｜操作（单独比对/查看）
       </footer>
-    </>
+    </FileProvider>
   );
 }
 
