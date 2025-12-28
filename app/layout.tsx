@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "政策文件对比（极简一行版UI）",
-  description: "今年文件 + 去年文件 + 结果，一行展示",
+  description: "新年度文件 + 旧年度文件 + 结果，一行展示",
 };
 
 export default function RootLayout({

@@ -110,7 +110,7 @@ export default function Home() {
       </main>
 
       <footer className="mx-auto max-w-6xl px-4 pb-10 text-xs text-slate-500">
-        极简一行版：今年文件｜去年文件｜对比结果（同一行）｜操作（单独比对/查看）
+        极简一行版：新年度文件｜旧年度文件｜对比结果（同一行）｜操作（单独比对/查看）
       </footer>
     </FileProvider>
   );

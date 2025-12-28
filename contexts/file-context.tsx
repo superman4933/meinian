@@ -16,13 +16,30 @@ export interface FileInfo {
   error?: string;
 }
 
+export interface ComparisonStatistics {
+  totalAdded: number;
+  totalDeleted: number;
+  totalModified: number;
+}
+
+export interface ComparisonStructuredData {
+  summary: string;
+  added: string[];
+  modified: string[];
+  deleted: string[];
+  statistics: ComparisonStatistics;
+  detailed: string; // markdown格式的详细内容
+}
+
 export interface ComparisonRow {
   id: string; // 城市ID
   company: string; // 分公司名称（城市名）
   thisYearFile: FileInfo | null;
   lastYearFile: FileInfo | null;
   comparisonStatus: "none" | "comparing" | "done" | "error";
-  comparisonResult?: any;
+  comparisonResult?: any; // 原始结果（可能是字符串或结构化数据）
+  comparisonStructured?: ComparisonStructuredData; // JSON格式的结构化数据
+  isJsonFormat?: boolean; // 标识是否是JSON格式
   comparisonError?: string;
 }
 

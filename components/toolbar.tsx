@@ -21,7 +21,7 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
   };
 
   const handleBatchCompare = async (type: "policy" | "commission") => {
-    // 筛选出可以对比的项（今年和去年文件都齐全）
+    // 筛选出可以对比的项（新年度和旧年度文件都齐全）
     const readyComparisons = comparisons.filter(
       (c) =>
         c.thisYearFile &&
@@ -32,7 +32,7 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
     );
 
     if (readyComparisons.length === 0) {
-      alert("没有可对比的文件，请先上传今年和去年的文件");
+      alert("没有可对比的文件，请先上传新年度和旧年度的文件");
       return;
     }
 
@@ -99,15 +99,19 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
             company: row.company,
             resultData: data.data,
             markdown: data.markdown,
+            structured: data.structured,
+            isJsonFormat: data.isJsonFormat,
             resultType: typeof data.data,
           });
 
-          // 优先使用 markdown 字段，如果没有则使用 data 字段
+          // 保存结果（可能是结构化数据或原始内容）
           const resultContent = data.markdown || data.data || "对比完成";
 
           updateComparison(row.id, {
             comparisonStatus: "done",
             comparisonResult: resultContent,
+            comparisonStructured: data.structured || undefined,
+            isJsonFormat: data.isJsonFormat || false,
             comparisonError: undefined,
           });
         } catch (error: any) {

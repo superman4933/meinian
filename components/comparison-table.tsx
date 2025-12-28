@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, Fragment } from "react";
-import { useFileContext, ComparisonRow } from "@/contexts/file-context";
+import { useFileContext, ComparisonRow, ComparisonStructuredData } from "@/contexts/file-context";
 import { formatFileSize } from "@/lib/city-matcher";
 import { getCozeTokenClient, getPolicyPrompt } from "@/lib/coze-config";
 import ReactMarkdown from "react-markdown";
@@ -281,6 +281,249 @@ function PreviewRow({
   return null;
 }
 
+// 对比结果展示组件（统计标签、摘要等）
+function ComparisonResultDisplay({
+  structured,
+  onViewDetail,
+}: {
+  structured: ComparisonStructuredData;
+  onViewDetail: () => void;
+}) {
+  const { statistics, summary, added, modified, deleted } = structured;
+  const [hoveredTag, setHoveredTag] = useState<string | null>(null);
+  const [hoveredSummary, setHoveredSummary] = useState(false);
+
+  return (
+    <div className="flex flex-col gap-2">
+      {/* 统计标签 */}
+      <div className="flex flex-wrap items-center gap-2">
+        {statistics.totalAdded > 0 && (
+          <div
+            className="relative"
+            onMouseEnter={() => setHoveredTag("added")}
+            onMouseLeave={() => setHoveredTag(null)}
+          >
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700 border border-emerald-200">
+              <span className="font-semibold">+{statistics.totalAdded}</span>
+              <span>新增</span>
+            </span>
+            {hoveredTag === "added" && added.length > 0 && (
+              <div className="absolute z-50 left-0 top-full mt-1 w-80 p-3 bg-white border border-slate-200 rounded-lg shadow-lg text-xs">
+                <div className="font-semibold mb-2 text-emerald-700">新增内容：</div>
+                <ul className="space-y-1 text-slate-700">
+                  {added.map((item, idx) => (
+                    <li key={idx} className="list-disc list-inside">{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+        {statistics.totalModified > 0 && (
+          <div
+            className="relative"
+            onMouseEnter={() => setHoveredTag("modified")}
+            onMouseLeave={() => setHoveredTag(null)}
+          >
+            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700 border border-blue-200">
+              <span className="font-semibold">~{statistics.totalModified}</span>
+              <span>修改</span>
+            </span>
+            {hoveredTag === "modified" && modified.length > 0 && (
+              <div className="absolute z-50 left-0 top-full mt-1 w-80 p-3 bg-white border border-slate-200 rounded-lg shadow-lg text-xs">
+                <div className="font-semibold mb-2 text-blue-700">修改内容：</div>
+                <ul className="space-y-1 text-slate-700">
+                  {modified.map((item, idx) => (
+                    <li key={idx} className="list-disc list-inside">{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+        {statistics.totalDeleted > 0 && (
+          <div
+            className="relative"
+            onMouseEnter={() => setHoveredTag("deleted")}
+            onMouseLeave={() => setHoveredTag(null)}
+          >
+            <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-1 text-xs text-red-700 border border-red-200">
+              <span className="font-semibold">-{statistics.totalDeleted}</span>
+              <span>删除</span>
+            </span>
+            {hoveredTag === "deleted" && deleted.length > 0 && (
+              <div className="absolute z-50 left-0 top-full mt-1 w-80 p-3 bg-white border border-slate-200 rounded-lg shadow-lg text-xs">
+                <div className="font-semibold mb-2 text-red-700">删除内容：</div>
+                <ul className="space-y-1 text-slate-700">
+                  {deleted.map((item, idx) => (
+                    <li key={idx} className="list-disc list-inside">{item}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 摘要（可悬浮查看完整内容） */}
+      {summary && (
+        <div
+          className="relative"
+          onMouseEnter={() => setHoveredSummary(true)}
+          onMouseLeave={() => setHoveredSummary(false)}
+        >
+          <div className="text-xs text-slate-600 line-clamp-2 cursor-help">
+            {summary}
+          </div>
+          {hoveredSummary && (
+            <div className="absolute z-50 left-0 top-full mt-1 w-96 p-3 bg-white border border-slate-200 rounded-lg shadow-lg text-xs text-slate-700">
+              <div className="font-semibold mb-1">完整摘要：</div>
+              <div>{summary}</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 查看详情按钮 */}
+      <button
+        onClick={onViewDetail}
+        className="text-xs text-blue-600 hover:text-blue-800 self-start"
+      >
+        查看详情 →
+      </button>
+    </div>
+  );
+}
+
+// 全屏详情对话框组件
+function DetailModal({
+  row,
+  isOpen,
+  onClose,
+}: {
+  row: ComparisonRow | null;
+  isOpen: boolean;
+  onClose: () => void;
+}) {
+  if (!isOpen || !row) return null;
+
+  let markdownContent = "";
+  let isJsonFormat = row.isJsonFormat || false;
+
+  if (isJsonFormat && row.comparisonStructured) {
+    markdownContent = row.comparisonStructured.detailed || "";
+  } else if (typeof row.comparisonResult === "string") {
+    markdownContent = row.comparisonResult;
+  } else if (row.comparisonResult && typeof row.comparisonResult === "object") {
+    if ((row.comparisonResult as any).markdown) {
+      markdownContent = (row.comparisonResult as any).markdown;
+    } else if ((row.comparisonResult as any).data) {
+      markdownContent = typeof (row.comparisonResult as any).data === "string"
+        ? (row.comparisonResult as any).data
+        : JSON.stringify((row.comparisonResult as any).data);
+    } else {
+      markdownContent = JSON.stringify(row.comparisonResult, null, 2);
+    }
+  }
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(markdownContent);
+      alert("对比结果已复制到剪贴板");
+    } catch (err) {
+      const textArea = document.createElement("textarea");
+      textArea.value = markdownContent;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textArea);
+      alert("对比结果已复制到剪贴板");
+    }
+  };
+
+  const handleExportPDF = () => {
+    alert("PDF导出功能暂时不可用，正在优化中");
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-4xl max-h-[90vh] bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 头部 */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
+          <h2 className="text-lg font-semibold text-slate-900">
+            对比详情 - {row.company.startsWith("未知_") ? "未知" : row.company}
+          </h2>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCopy}
+              className="text-sm text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors flex items-center gap-1"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              复制
+            </button>
+            <button
+              onClick={handleExportPDF}
+              className="text-sm text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors flex items-center gap-1"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              导出PDF
+            </button>
+            <button
+              onClick={onClose}
+              className="text-slate-500 hover:text-slate-700 p-2"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* 内容区域 */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          <div className="prose prose-sm max-w-none text-slate-700">
+            <ReactMarkdown
+              components={{
+                h1: ({ node, ...props }) => <h1 className="text-xl font-bold mt-4 mb-2" {...props} />,
+                h2: ({ node, ...props }) => <h2 className="text-lg font-semibold mt-3 mb-2" {...props} />,
+                h3: ({ node, ...props }) => <h3 className="text-base font-semibold mt-2 mb-1" {...props} />,
+                h4: ({ node, ...props }) => <h4 className="text-sm font-semibold mt-2 mb-1" {...props} />,
+                p: ({ node, ...props }) => <p className="mb-2 leading-relaxed" {...props} />,
+                ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2 space-y-1" {...props} />,
+                ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2 space-y-1" {...props} />,
+                li: ({ node, ...props }) => <li className="ml-4" {...props} />,
+                strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
+                em: ({ node, ...props }) => <em className="italic" {...props} />,
+                code: ({ node, ...props }) => (
+                  <code className="bg-slate-100 px-1 py-0.5 rounded text-xs font-mono" {...props} />
+                ),
+                pre: ({ node, ...props }) => (
+                  <pre className="bg-slate-100 p-3 rounded overflow-x-auto mb-2" {...props} />
+                ),
+                blockquote: ({ node, ...props }) => (
+                  <blockquote className="border-l-4 border-slate-300 pl-4 italic my-2" {...props} />
+                ),
+              }}
+            >
+              {markdownContent || "暂无详细内容"}
+            </ReactMarkdown>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface ComparisonTableProps {
   filterStatus?: string;
 }
@@ -288,6 +531,10 @@ interface ComparisonTableProps {
 export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTableProps) {
   const { comparisons, removeFile, updateComparison, addFile } = useFileContext();
   const [openPreviews, setOpenPreviews] = useState<Set<string>>(new Set());
+  const [detailModal, setDetailModal] = useState<{ open: boolean; row: ComparisonRow | null }>({
+    open: false,
+    row: null,
+  });
 
   function togglePreview(id: string) {
     setOpenPreviews((prev) => {
@@ -411,7 +658,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
 
   const handleCompare = async (row: ComparisonRow) => {
     if (!row.thisYearFile || !row.lastYearFile) {
-      alert("请先上传今年和去年的文件");
+      alert("请先上传新年度和旧年度的文件");
       return;
     }
 
@@ -421,7 +668,6 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
     }
 
     updateComparison(row.id, { comparisonStatus: "comparing" });
-    togglePreview(row.id);
 
     try {
       // 获取token并添加到请求头
@@ -471,15 +717,19 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         company: row.company,
         resultData: data.data,
         markdown: data.markdown,
+        structured: data.structured,
+        isJsonFormat: data.isJsonFormat,
         resultType: typeof data.data,
       });
 
-      // 优先使用 markdown 字段，如果没有则使用 data 字段
+      // 保存结果（可能是结构化数据或原始内容）
       const resultContent = data.markdown || data.data || "对比完成";
 
       updateComparison(row.id, {
         comparisonStatus: "done",
         comparisonResult: resultContent,
+        comparisonStructured: data.structured || undefined,
+        isJsonFormat: data.isJsonFormat || false,
         comparisonError: undefined,
       });
     } catch (error: any) {
@@ -491,13 +741,32 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
     }
   };
 
+  // 过滤对比列表
+  const filteredComparisons = comparisons.filter((row) => {
+    const hasBothFiles = row.thisYearFile && row.lastYearFile;
+    const hasBothFileIds = hasBothFiles && row.thisYearFile!.file_id && row.lastYearFile!.file_id;
+
+    switch (filterStatus) {
+      case "可比对":
+        return hasBothFileIds && row.comparisonStatus !== "comparing";
+      case "缺文件":
+        return !hasBothFiles || !hasBothFileIds;
+      case "已完成":
+        return row.comparisonStatus === "done";
+      case "全部状态":
+      default:
+        return true;
+    }
+  });
+
   // 按分公司名称排序
-  const sortedComparisons = [...comparisons].sort((a, b) =>
+  const sortedComparisons = [...filteredComparisons].sort((a, b) =>
     a.company.localeCompare(b.company, "zh-CN")
   );
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <Fragment>
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="bg-slate-50 px-4 py-3 flex items-center justify-between">
         <div className="text-sm font-semibold">分公司文件对比列表（一行展示）</div>
       </div>
@@ -507,8 +776,8 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           <thead className="bg-white text-slate-600">
             <tr className="border-b border-slate-200">
               <th className="px-4 py-3 font-medium">分公司</th>
-              <th className="px-4 py-3 font-medium" style={{ width: "160px" }}>去年文件</th>
-              <th className="px-4 py-3 font-medium" style={{ width: "160px" }}>今年文件</th>
+              <th className="px-4 py-3 font-medium" style={{ width: "160px" }}>旧年度文件</th>
+              <th className="px-4 py-3 font-medium" style={{ width: "160px" }}>新年度文件</th>
               <th className="px-4 py-3 font-medium">对比状态</th>
               <th className="px-4 py-3 font-medium">对比结果（同一行）</th>
               <th className="px-4 py-3 font-medium text-right">操作</th>
@@ -573,17 +842,26 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                     </td>
 
                     <td className="px-4 py-3">
-                      {row.comparisonStatus === "done" && (
-                        <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700">
-                          对比完成
-                        </span>
-                      )}
-                      {row.comparisonStatus === "error" && (
+                      {row.comparisonStatus === "done" && row.comparisonStructured && row.isJsonFormat ? (
+                        <ComparisonResultDisplay
+                          structured={row.comparisonStructured}
+                          onViewDetail={() => setDetailModal({ open: true, row })}
+                        />
+                      ) : row.comparisonStatus === "done" ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-slate-600">对比完成</span>
+                          <button
+                            onClick={() => setDetailModal({ open: true, row })}
+                            className="text-xs text-blue-600 hover:text-blue-800"
+                          >
+                            查看详情
+                          </button>
+                        </div>
+                      ) : row.comparisonStatus === "error" ? (
                         <span className="rounded-full bg-red-50 px-2 py-1 text-xs text-red-700">
                           对比失败
                         </span>
-                      )}
-                      {row.comparisonStatus === "none" && (
+                      ) : (
                         <span className="text-xs text-slate-400">—</span>
                       )}
                     </td>
@@ -619,12 +897,12 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                               >
                                 政策单独对比
                               </button>
-                              <button
-                                onClick={() => togglePreview(row.id)}
-                                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs hover:bg-slate-50"
-                              >
-                                查看详情
-                              </button>
+                                 <button
+                                   onClick={() => setDetailModal({ open: true, row })}
+                                   className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs hover:bg-slate-50"
+                                 >
+                                   查看详情
+                                 </button>
                             </>
                           ) : (
                             <button
@@ -640,7 +918,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                               }}
                               disabled={true}
                               className="rounded-xl bg-slate-200 px-3 py-1.5 text-xs text-slate-400 cursor-not-allowed"
-                              title={`请先上传今年和去年的文件。状态：今年文件${hasThisYear ? "✓" : "✗"}，去年文件${hasLastYear ? "✓" : "✗"}，今年file_id${hasThisYearFileId ? "✓" : "✗"}，去年file_id${hasLastYearFileId ? "✓" : "✗"}`}
+                              title={`请先上传新年度和旧年度的文件。状态：新年度文件${hasThisYear ? "✓" : "✗"}，旧年度文件${hasLastYear ? "✓" : "✗"}，新年度file_id${hasThisYearFileId ? "✓" : "✗"}，旧年度file_id${hasLastYearFileId ? "✓" : "✗"}`}
                             >
                               政策单独对比
                             </button>
@@ -649,12 +927,6 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                       </div>
                     </td>
                   </tr>
-                  <PreviewRow
-                    key={`preview-${row.id}`}
-                    row={row}
-                    isOpen={openPreviews.has(row.id)}
-                    onToggle={() => togglePreview(row.id)}
-                  />
                   </Fragment>
                 );
               })
@@ -664,9 +936,17 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       </div>
 
       <div className="border-t border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 flex items-center justify-between">
-        <span>提示：只有"今年+去年"齐全才可"单独比对 / 一键比对"。</span>
+        <span>提示：只有"新年度+旧年度"齐全才可"单独比对 / 一键比对"。</span>
         <span>共 {sortedComparisons.length} 家分公司</span>
       </div>
     </section>
+
+    {/* 全屏详情对话框 */}
+    <DetailModal
+      row={detailModal.row}
+      isOpen={detailModal.open}
+      onClose={() => setDetailModal({ open: false, row: null })}
+    />
+    </Fragment>
   );
 }

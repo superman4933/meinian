@@ -23,8 +23,8 @@ export async function POST(request: NextRequest) {
     const requestBody = {
       workflow_id: WORKFLOW_ID,
       parameters: {
-        file1: JSON.stringify({ file_id: file1_id }),
-        file2: JSON.stringify({ file_id: file2_id }),
+        oldFile: JSON.stringify({ file_id: file1_id }),
+        newFile: JSON.stringify({ file_id: file2_id }),
         prompt: prompt || "请分析这两个文件的内容差异",
       },
     };
@@ -101,47 +101,118 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 解析返回数据，提取 markdown 内容
+    // 解析返回数据，尝试提取JSON格式的结构化数据或markdown内容
+    let structuredData = null;
     let markdownContent = null;
-    let parsedData = null;
+    let rawContent = null;
+    let isJsonFormat = false;
     
     try {
-      // data.data 是一个 JSON 字符串，需要解析
+      // 第一步：从data.data中提取内容
+      let extractedContent = null;
+      
       if (data.data && typeof data.data === 'string') {
-        parsedData = JSON.parse(data.data);
-        console.log("解析后的 data.data:", {
-          parsedData,
-          hasData: !!parsedData.data,
-          contentType: parsedData.content_type,
-        });
-        
-        // 如果 parsedData.data 还是字符串，继续解析
-        if (parsedData.data && typeof parsedData.data === 'string') {
-          try {
-            const innerData = JSON.parse(parsedData.data);
-            markdownContent = innerData.data || parsedData.data;
-          } catch (e) {
-            // 如果解析失败，说明 parsedData.data 就是 markdown 内容
-            markdownContent = parsedData.data;
+        // data.data 是字符串，尝试解析
+        try {
+          const parsed = JSON.parse(data.data);
+          if (parsed.data && typeof parsed.data === 'string') {
+            // 继续解析内层字符串
+            try {
+              extractedContent = JSON.parse(parsed.data);
+            } catch (e) {
+              extractedContent = parsed.data;
+            }
+          } else {
+            extractedContent = parsed.data || parsed;
           }
-        } else {
-          markdownContent = parsedData.data;
+        } catch (e) {
+          extractedContent = data.data;
         }
       } else if (data.data && typeof data.data === 'object') {
-        // 如果 data.data 已经是对象
         if (data.data.data && typeof data.data.data === 'string') {
           try {
-            const innerData = JSON.parse(data.data.data);
-            markdownContent = innerData.data || data.data.data;
+            extractedContent = JSON.parse(data.data.data);
           } catch (e) {
-            markdownContent = data.data.data;
+            extractedContent = data.data.data;
           }
         } else {
-          markdownContent = data.data.data || data.data;
+          extractedContent = data.data.data || data.data;
         }
+      } else {
+        extractedContent = data.data;
+      }
+
+      // 第二步：检查extractedContent是否是JSON格式的结构化数据
+      if (typeof extractedContent === 'string') {
+        // 尝试解析为JSON
+        try {
+          const parsedJson = JSON.parse(extractedContent);
+          // 检查是否包含预期的JSON结构字段
+          if (
+            parsedJson &&
+            typeof parsedJson === 'object' &&
+            (parsedJson.summary !== undefined ||
+             parsedJson.added !== undefined ||
+             parsedJson.modified !== undefined ||
+             parsedJson.deleted !== undefined ||
+             parsedJson.statistics !== undefined ||
+             parsedJson.detailed !== undefined)
+          ) {
+            structuredData = parsedJson;
+            isJsonFormat = true;
+            markdownContent = parsedJson.detailed || null;
+            console.log("检测到JSON格式的结构化数据:", {
+              hasSummary: !!parsedJson.summary,
+              hasAdded: !!parsedJson.added,
+              hasModified: !!parsedJson.modified,
+              hasDeleted: !!parsedJson.deleted,
+              hasStatistics: !!parsedJson.statistics,
+              hasDetailed: !!parsedJson.detailed,
+            });
+          } else {
+            // 不是预期的JSON结构，当作markdown处理
+            markdownContent = extractedContent;
+            rawContent = extractedContent;
+          }
+        } catch (e) {
+          // 不是JSON格式，当作markdown处理
+          markdownContent = extractedContent;
+          rawContent = extractedContent;
+        }
+      } else if (typeof extractedContent === 'object' && extractedContent !== null) {
+        // 已经是对象，检查是否是预期的JSON结构
+        if (
+          extractedContent.summary !== undefined ||
+          extractedContent.added !== undefined ||
+          extractedContent.modified !== undefined ||
+          extractedContent.deleted !== undefined ||
+          extractedContent.statistics !== undefined ||
+          extractedContent.detailed !== undefined
+        ) {
+          structuredData = extractedContent;
+          isJsonFormat = true;
+          markdownContent = extractedContent.detailed || null;
+          console.log("检测到JSON格式的结构化数据（对象）:", {
+            hasSummary: !!extractedContent.summary,
+            hasAdded: !!extractedContent.added,
+            hasModified: !!extractedContent.modified,
+            hasDeleted: !!extractedContent.deleted,
+            hasStatistics: !!extractedContent.statistics,
+            hasDetailed: !!extractedContent.detailed,
+          });
+        } else {
+          // 不是预期的JSON结构
+          rawContent = JSON.stringify(extractedContent);
+          markdownContent = rawContent;
+        }
+      } else {
+        rawContent = extractedContent;
+        markdownContent = extractedContent;
       }
       
-      console.log("提取的 markdown 内容:", {
+      console.log("数据解析结果:", {
+        isJsonFormat,
+        hasStructuredData: !!structuredData,
         hasMarkdown: !!markdownContent,
         markdownLength: markdownContent?.length,
         markdownPreview: markdownContent?.substring(0, 200),
@@ -152,14 +223,17 @@ export async function POST(request: NextRequest) {
         rawData: data.data,
       });
       // 如果解析失败，使用原始数据
-      markdownContent = typeof data.data === 'string' ? data.data : JSON.stringify(data.data);
+      rawContent = typeof data.data === 'string' ? data.data : JSON.stringify(data.data);
+      markdownContent = rawContent;
     }
 
     // 记录成功返回的数据
     const result = {
       success: true,
-      data: markdownContent || data.data || data,
-      markdown: markdownContent, // 单独提供 markdown 字段
+      data: rawContent || markdownContent || data.data || data,
+      markdown: markdownContent, // markdown内容（可能是detailed字段或原始内容）
+      structured: structuredData, // JSON格式的结构化数据（如果存在）
+      isJsonFormat, // 标识是否是JSON格式
       execute_id: data.execute_id,
       debug_url: data.debug_url,
       raw_data: data.data, // 保留原始数据用于调试

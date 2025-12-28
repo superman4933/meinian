@@ -21,7 +21,7 @@ export function Header({ username, onLogout }: HeaderProps) {
             </div>
             <div>
               <div className="text-sm font-semibold leading-4">政策文件对比（极简）</div>
-              <div className="text-xs text-slate-500">今年文件 + 去年文件 + 结果，一行展示</div>
+              <div className="text-xs text-slate-500">新年度文件 + 旧年度文件 + 结果，一行展示</div>
             </div>
           </div>
 

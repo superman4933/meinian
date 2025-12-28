@@ -11,7 +11,7 @@ interface FileUploadProps {
 
 export function FileUpload({ type }: FileUploadProps) {
   const isLastYear = type === "lastYear";
-  const title = isLastYear ? "上传去年文件" : "上传今年文件";
+  const title = isLastYear ? "上传旧年度文件" : "上传新年度文件";
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const { addFile } = useFileContext();
