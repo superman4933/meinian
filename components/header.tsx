@@ -14,13 +14,11 @@ export function Header({ username, onLogout }: HeaderProps) {
   return (
     <>
       <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto max-w-6xl px-4 py-4 flex items-center justify-between">
+        <div className="mx-auto max-w-[1400px] px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-xl bg-slate-900 text-white flex items-center justify-center font-semibold">
-              PF
-            </div>
+            <img src="/logo.png" alt="美年大健康" className="h-9 w-9 rounded-xl object-contain" />
             <div>
-              <div className="text-sm font-semibold leading-4">政策文件对比（极简）</div>
+              <div className="text-sm font-semibold leading-4">美年大健康 - 政策对比工具</div>
               <div className="text-xs text-slate-500">新年度文件 + 旧年度文件 + 结果，一行展示</div>
             </div>
           </div>

@@ -125,9 +125,8 @@ function FileDisplay({
     <div className="flex items-start gap-2 group">
       <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-slate-100 flex-shrink-0 text-xs">📄</span>
       <div className="flex-1 min-w-0" style={{ width: "140px", maxWidth: "140px" }}>
-        <button
-          onClick={onPreview}
-          className="font-medium text-left hover:text-blue-600 block w-full text-sm leading-tight"
+        <div
+          className="font-medium text-left text-sm leading-tight text-slate-700"
           title={file.name}
           style={{
             display: "-webkit-box",
@@ -139,7 +138,7 @@ function FileDisplay({
           }}
         >
           {file.name}
-        </button>
+        </div>
         <div className="text-xs text-slate-500 mt-1">{file.sizeFormatted}</div>
       </div>
       <button
@@ -363,7 +362,57 @@ function SummaryTooltip({
   );
 }
 
-// 对比结果展示组件（只显示标签，可点击展开）
+// 标签悬浮提示组件（显示对应内容的详情）
+function TagTooltip({
+  content,
+  title,
+  tagRef,
+  isHovered,
+}: {
+  content: string[];
+  title: string;
+  tagRef: React.RefObject<HTMLButtonElement>;
+  isHovered: boolean;
+}) {
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+    if (isHovered && tagRef.current && typeof window !== "undefined") {
+      const rect = tagRef.current.getBoundingClientRect();
+      setPosition({
+        top: rect.bottom + window.scrollY + 4,
+        left: rect.right + window.scrollX - 384, // 384px 是悬浮窗宽度，右对齐
+      });
+    }
+  }, [isHovered, tagRef]);
+
+  const tooltipContent = isHovered && content.length > 0 && typeof window !== "undefined" ? (
+    createPortal(
+      <div
+        className="fixed z-[9999] w-96 p-3 bg-white border border-slate-200 rounded-lg shadow-xl text-xs text-slate-700 pointer-events-none max-h-96 overflow-y-auto"
+        style={{
+          top: `${position.top}px`,
+          left: `${position.left}px`,
+        }}
+      >
+        <div className="font-semibold mb-2">{title}：</div>
+        <ul className="space-y-1.5">
+          {content.map((item, idx) => (
+            <li key={idx} className="flex items-start gap-2">
+              <span className="mt-0.5 flex-shrink-0">•</span>
+              <span className="flex-1 break-words">{item}</span>
+            </li>
+          ))}
+        </ul>
+      </div>,
+      document.body
+    )
+  ) : null;
+
+  return tooltipContent;
+}
+
+// 对比结果展示组件（只显示标签，可点击展开，悬浮显示详情）
 function ComparisonResultDisplay({
   structured,
   onExpandToggle,
@@ -371,36 +420,73 @@ function ComparisonResultDisplay({
   structured: ComparisonStructuredData;
   onExpandToggle: () => void;
 }) {
-  const { statistics } = structured;
+  const { statistics, added, modified, deleted } = structured;
+  const [hoveredTag, setHoveredTag] = useState<"added" | "modified" | "deleted" | null>(null);
+  const addedRef = useRef<HTMLButtonElement>(null);
+  const modifiedRef = useRef<HTMLButtonElement>(null);
+  const deletedRef = useRef<HTMLButtonElement>(null);
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-row flex-wrap items-center gap-2">
       {statistics.totalAdded > 0 && (
-        <button
-          onClick={onExpandToggle}
-          className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
-        >
-          <span className="font-semibold">+{statistics.totalAdded}</span>
-          <span>新增</span>
-        </button>
+        <>
+          <button
+            ref={addedRef}
+            onClick={onExpandToggle}
+            onMouseEnter={() => setHoveredTag("added")}
+            onMouseLeave={() => setHoveredTag(null)}
+            className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
+          >
+            <span className="font-semibold">+{statistics.totalAdded}</span>
+            <span>新增</span>
+          </button>
+          <TagTooltip
+            content={added}
+            title="新增内容"
+            tagRef={addedRef}
+            isHovered={hoveredTag === "added"}
+          />
+        </>
       )}
       {statistics.totalModified > 0 && (
-        <button
-          onClick={onExpandToggle}
-          className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
-        >
-          <span className="font-semibold">~{statistics.totalModified}</span>
-          <span>修改</span>
-        </button>
+        <>
+          <button
+            ref={modifiedRef}
+            onClick={onExpandToggle}
+            onMouseEnter={() => setHoveredTag("modified")}
+            onMouseLeave={() => setHoveredTag(null)}
+            className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
+          >
+            <span className="font-semibold">~{statistics.totalModified}</span>
+            <span>修改</span>
+          </button>
+          <TagTooltip
+            content={modified}
+            title="修改内容"
+            tagRef={modifiedRef}
+            isHovered={hoveredTag === "modified"}
+          />
+        </>
       )}
       {statistics.totalDeleted > 0 && (
-        <button
-          onClick={onExpandToggle}
-          className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-1 text-xs text-red-700 border border-red-200 hover:bg-red-100 transition-colors cursor-pointer"
-        >
-          <span className="font-semibold">-{statistics.totalDeleted}</span>
-          <span>删除</span>
-        </button>
+        <>
+          <button
+            ref={deletedRef}
+            onClick={onExpandToggle}
+            onMouseEnter={() => setHoveredTag("deleted")}
+            onMouseLeave={() => setHoveredTag(null)}
+            className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-1 text-xs text-red-700 border border-red-200 hover:bg-red-100 transition-colors cursor-pointer"
+          >
+            <span className="font-semibold">-{statistics.totalDeleted}</span>
+            <span>删除</span>
+          </button>
+          <TagTooltip
+            content={deleted}
+            title="删除内容"
+            tagRef={deletedRef}
+            isHovered={hoveredTag === "deleted"}
+          />
+        </>
       )}
     </div>
   );
@@ -420,12 +506,20 @@ function ComparisonCardsRow({
 }) {
   if (!isOpen) return null;
 
-  const { added, modified, deleted } = structured;
+  const { added, modified, deleted, summary } = structured;
 
   return (
     <tr className="bg-slate-50/50">
       <td colSpan={6} className="px-4 py-4">
         <div className="rounded-xl border border-slate-200 bg-white p-4">
+          {/* 摘要显示 - 顶部 */}
+          {summary && (
+            <div className="mb-4 pb-4 border-b border-slate-200">
+              <div className="font-semibold mb-2 text-sm text-slate-700">摘要：</div>
+              <div className="text-sm text-slate-600 leading-relaxed">{summary}</div>
+            </div>
+          )}
+          
           {/* 卡片内容 */}
           <div className="flex flex-row gap-3 mb-3">
             {/* 新增内容卡片 */}
@@ -904,15 +998,15 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       </div>
 
       <div className="overflow-auto">
-        <table className="min-w-full text-left text-sm">
+        <table className="min-w-full text-left text-sm" style={{ tableLayout: 'fixed' }}>
           <thead className="bg-white text-slate-600">
             <tr className="border-b border-slate-200">
-              <th className="px-4 py-3 font-medium">分公司</th>
+              <th className="px-4 py-3 font-medium" style={{ width: "120px" }}>分公司</th>
               <th className="px-4 py-3 font-medium" style={{ width: "160px" }}>旧年度文件</th>
               <th className="px-4 py-3 font-medium" style={{ width: "160px" }}>新年度文件</th>
-              <th className="px-4 py-3 font-medium">对比状态</th>
+              <th className="px-4 py-3 font-medium" style={{ width: "100px" }}>对比状态</th>
               <th className="px-4 py-3 font-medium">对比结果（同一行）</th>
-              <th className="px-4 py-3 font-medium text-right">操作</th>
+              <th className="px-4 py-3 font-medium text-right" style={{ width: "200px" }}>操作</th>
             </tr>
           </thead>
 

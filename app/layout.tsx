@@ -2,8 +2,12 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "政策文件对比（极简一行版UI）",
-  description: "新年度文件 + 旧年度文件 + 结果，一行展示",
+  title: "美年大健康 - 政策对比工具",
+  description: "美年大健康政策文件对比工具，支持新年度和旧年度政策文件的智能对比分析",
+  icons: {
+    icon: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({

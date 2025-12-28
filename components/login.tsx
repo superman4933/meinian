@@ -125,7 +125,7 @@ export function Login({ onLoginSuccess }: LoginProps) {
 
           {/* 系统名称 */}
           <div className="pt-4 border-t border-slate-200/50">
-            <p className="text-sm font-medium text-slate-600">政策文件对比系统</p>
+            <p className="text-sm font-medium text-slate-600">美年大健康 - 政策对比工具</p>
           </div>
         </div>
 
