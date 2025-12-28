@@ -67,7 +67,7 @@ export function FileProvider({ children }: { children: ReactNode }) {
             ? {
                 ...c,
                 [file.type === "thisYear" ? "thisYearFile" : "lastYearFile"]: file,
-                comparisonStatus: "none", // 重置对比状态
+                comparisonStatus: "none" as const, // 重置对比状态
                 comparisonResult: undefined,
                 comparisonError: undefined,
               }
@@ -82,7 +82,7 @@ export function FileProvider({ children }: { children: ReactNode }) {
           company: file.city,
           thisYearFile: file.type === "thisYear" ? file : null,
           lastYearFile: file.type === "lastYear" ? file : null,
-          comparisonStatus: "none",
+          comparisonStatus: "none" as const,
         };
         return [...prev, newRow];
       }
@@ -101,16 +101,18 @@ export function FileProvider({ children }: { children: ReactNode }) {
             return {
               ...c,
               thisYearFile: null,
-              comparisonStatus: "none",
+              comparisonStatus: "none" as const,
               comparisonResult: undefined,
+              comparisonError: undefined,
             };
           }
           if (c.lastYearFile?.id === fileId) {
             return {
               ...c,
               lastYearFile: null,
-              comparisonStatus: "none",
+              comparisonStatus: "none" as const,
               comparisonResult: undefined,
+              comparisonError: undefined,
             };
           }
           return c;
@@ -159,7 +161,7 @@ export function FileProvider({ children }: { children: ReactNode }) {
     setComparisons((prev) =>
       prev.map((c) => ({
         ...c,
-        comparisonStatus: "none",
+        comparisonStatus: "none" as const,
         comparisonResult: undefined,
         comparisonError: undefined,
       }))

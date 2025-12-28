@@ -7,6 +7,7 @@ import { getCozeTokenClient, getPolicyPrompt } from "@/lib/coze-config";
 import ReactMarkdown from "react-markdown";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from "docx";
 import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 
 function FileDisplay({
   file,
@@ -197,24 +198,105 @@ function PreviewRow({
     // 导出PDF
     const handleExportPDF = async () => {
       try {
-        const pdf = new jsPDF();
-        const lines = markdownContent.split("\n");
-        let y = 20;
-        pdf.setFontSize(12);
+        // 创建一个临时的div来渲染markdown内容为HTML
+        const tempDiv = document.createElement("div");
+        tempDiv.style.width = "800px";
+        tempDiv.style.padding = "40px";
+        tempDiv.style.backgroundColor = "white";
+        tempDiv.style.fontFamily = "'Microsoft YaHei', 'SimHei', 'PingFang SC', Arial, sans-serif";
+        tempDiv.style.fontSize = "14px";
+        tempDiv.style.lineHeight = "1.8";
+        tempDiv.style.color = "#333";
+        tempDiv.style.position = "absolute";
+        tempDiv.style.left = "-9999px";
+        tempDiv.style.top = "0";
+        tempDiv.style.whiteSpace = "pre-wrap";
+        tempDiv.style.wordWrap = "break-word";
         
-        lines.forEach((line) => {
-          if (y > 280) {
-            pdf.addPage();
-            y = 20;
+        // 将markdown转换为简单的HTML（处理基本格式）
+        let htmlContent = markdownContent
+          // 处理标题
+          .replace(/^### (.*$)/gim, '<h3 style="font-size: 18px; font-weight: bold; margin-top: 16px; margin-bottom: 8px;">$1</h3>')
+          .replace(/^## (.*$)/gim, '<h2 style="font-size: 20px; font-weight: bold; margin-top: 18px; margin-bottom: 10px;">$1</h2>')
+          .replace(/^# (.*$)/gim, '<h1 style="font-size: 24px; font-weight: bold; margin-top: 20px; margin-bottom: 12px;">$1</h1>')
+          // 处理加粗
+          .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
+          // 处理斜体
+          .replace(/\*(.*?)\*/gim, '<em>$1</em>');
+        
+        // 处理列表
+        const lines = htmlContent.split('\n');
+        let inList = false;
+        htmlContent = lines.map((line, index) => {
+          const trimmed = line.trim();
+          if (trimmed === '') {
+            if (inList) {
+              inList = false;
+              return '</ul><br>';
+            }
+            return '<br>';
           }
-          // 处理长行，自动换行
-          const maxWidth = 190;
-          const splitLines = pdf.splitTextToSize(line, maxWidth);
-          splitLines.forEach((splitLine: string) => {
-            pdf.text(splitLine, 10, y);
-            y += 7;
-          });
+          if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+            if (!inList) {
+              inList = true;
+              return '<ul style="margin-left: 20px; margin-bottom: 12px;"><li style="margin-bottom: 6px;">' + trimmed.substring(2) + '</li>';
+            }
+            return '<li style="margin-bottom: 6px;">' + trimmed.substring(2) + '</li>';
+          }
+          if (inList) {
+            inList = false;
+            const result = '</ul><p style="margin-bottom: 12px;">' + line + '</p>';
+            return result;
+          }
+          if (line.startsWith('<h') || line.startsWith('</h')) {
+            return line;
+          }
+          return '<p style="margin-bottom: 12px;">' + line + '</p>';
+        }).join('');
+        
+        if (inList) {
+          htmlContent += '</ul>';
+        }
+        
+        tempDiv.innerHTML = htmlContent;
+        document.body.appendChild(tempDiv);
+        
+        // 等待渲染完成
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        // 使用html2canvas转换为图片
+        const canvas = await html2canvas(tempDiv, {
+          scale: 2,
+          useCORS: true,
+          logging: false,
+          backgroundColor: "#ffffff",
         });
+        
+        const imgData = canvas.toDataURL("image/png");
+        
+        // 计算PDF尺寸
+        const imgWidth = 210; // A4宽度（mm）
+        const pageHeight = 297; // A4高度（mm）
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+        let heightLeft = imgHeight;
+        
+        const pdf = new jsPDF("p", "mm", "a4");
+        let position = 0;
+        
+        // 添加第一页
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+        
+        // 如果内容超过一页，添加新页
+        while (heightLeft > 0) {
+          position = heightLeft - imgHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+          heightLeft -= pageHeight;
+        }
+        
+        // 清理临时元素
+        document.body.removeChild(tempDiv);
         
         const fileName = `${row.company || "对比结果"}_${new Date().toISOString().split("T")[0]}.pdf`;
         pdf.save(fileName);
