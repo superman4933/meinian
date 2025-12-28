@@ -163,7 +163,29 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
             {isComparing ? "对比中..." : "政策一键对比"}
           </button>
           <button
-            onClick={() => handleBatchCompare("commission")}
+            onClick={() => {
+              // 显示toast提示
+              if (typeof window === "undefined") return;
+              const toast = document.createElement("div");
+              toast.className = "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-slate-900 text-white px-6 py-4 rounded-lg shadow-xl text-sm";
+              toast.textContent = "该功能正在开发中";
+              toast.style.opacity = "0";
+              toast.style.transition = "opacity 0.3s";
+              document.body.appendChild(toast);
+              
+              // 淡入动画
+              setTimeout(() => {
+                toast.style.opacity = "1";
+              }, 10);
+              
+              // 3秒后淡出并移除
+              setTimeout(() => {
+                toast.style.opacity = "0";
+                setTimeout(() => {
+                  toast.remove();
+                }, 300);
+              }, 2700);
+            }}
             disabled={isComparing}
             className="rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
           >

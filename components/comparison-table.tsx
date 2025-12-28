@@ -1,10 +1,36 @@
 "use client";
 
-import { useState, Fragment } from "react";
+import { useState, Fragment, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useFileContext, ComparisonRow, ComparisonStructuredData } from "@/contexts/file-context";
 import { formatFileSize } from "@/lib/city-matcher";
 import { getCozeTokenClient, getPolicyPrompt } from "@/lib/coze-config";
 import ReactMarkdown from "react-markdown";
+
+// Toast提示工具函数
+function showToast(message: string) {
+  if (typeof window === "undefined") return;
+  
+  const toast = document.createElement("div");
+  toast.className = "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-slate-900 text-white px-6 py-4 rounded-lg shadow-xl text-sm";
+  toast.textContent = message;
+  toast.style.opacity = "0";
+  toast.style.transition = "opacity 0.3s";
+  document.body.appendChild(toast);
+  
+  // 淡入动画
+  setTimeout(() => {
+    toast.style.opacity = "1";
+  }, 10);
+  
+  // 3秒后淡出并移除
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    setTimeout(() => {
+      toast.remove();
+    }, 300);
+  }, 2700);
+}
 
 function FileDisplay({
   file,
@@ -281,117 +307,210 @@ function PreviewRow({
   return null;
 }
 
-// 对比结果展示组件（统计标签、摘要等）
-function ComparisonResultDisplay({
-  structured,
-  onViewDetail,
+// 摘要悬浮提示组件（使用 Portal 渲染到 body，避免被表格容器遮挡）
+function SummaryTooltip({
+  summary,
+  rowId,
+  onButtonClick,
 }: {
-  structured: ComparisonStructuredData;
-  onViewDetail: () => void;
+  summary?: string;
+  rowId: string;
+  onButtonClick: () => void;
 }) {
-  const { statistics, summary, added, modified, deleted } = structured;
-  const [hoveredTag, setHoveredTag] = useState<string | null>(null);
-  const [hoveredSummary, setHoveredSummary] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const [position, setPosition] = useState({ top: 0, left: 0 });
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (isHovered && buttonRef.current && typeof window !== "undefined") {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setPosition({
+        top: rect.bottom + window.scrollY + 4,
+        left: rect.right + window.scrollX - 384, // 384px 是悬浮窗宽度，右对齐
+      });
+    }
+  }, [isHovered]);
+
+  const tooltipContent = isHovered && summary && typeof window !== "undefined" ? (
+    createPortal(
+      <div
+        className="fixed z-[9999] w-96 p-3 bg-white border border-slate-200 rounded-lg shadow-xl text-xs text-slate-700 pointer-events-none"
+        style={{
+          top: `${position.top}px`,
+          left: `${position.left}px`,
+        }}
+      >
+        <div className="font-semibold mb-1">摘要：</div>
+        <div>{summary}</div>
+      </div>,
+      document.body
+    )
+  ) : null;
 
   return (
-    <div className="flex flex-col gap-2">
-      {/* 统计标签 */}
-      <div className="flex flex-wrap items-center gap-2">
-        {statistics.totalAdded > 0 && (
-          <div
-            className="relative"
-            onMouseEnter={() => setHoveredTag("added")}
-            onMouseLeave={() => setHoveredTag(null)}
-          >
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700 border border-emerald-200">
-              <span className="font-semibold">+{statistics.totalAdded}</span>
-              <span>新增</span>
-            </span>
-            {hoveredTag === "added" && added.length > 0 && (
-              <div className="absolute z-50 left-0 top-full mt-1 w-80 p-3 bg-white border border-slate-200 rounded-lg shadow-lg text-xs">
-                <div className="font-semibold mb-2 text-emerald-700">新增内容：</div>
-                <ul className="space-y-1 text-slate-700">
-                  {added.map((item, idx) => (
-                    <li key={idx} className="list-disc list-inside">{item}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        )}
-        {statistics.totalModified > 0 && (
-          <div
-            className="relative"
-            onMouseEnter={() => setHoveredTag("modified")}
-            onMouseLeave={() => setHoveredTag(null)}
-          >
-            <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700 border border-blue-200">
-              <span className="font-semibold">~{statistics.totalModified}</span>
-              <span>修改</span>
-            </span>
-            {hoveredTag === "modified" && modified.length > 0 && (
-              <div className="absolute z-50 left-0 top-full mt-1 w-80 p-3 bg-white border border-slate-200 rounded-lg shadow-lg text-xs">
-                <div className="font-semibold mb-2 text-blue-700">修改内容：</div>
-                <ul className="space-y-1 text-slate-700">
-                  {modified.map((item, idx) => (
-                    <li key={idx} className="list-disc list-inside">{item}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        )}
-        {statistics.totalDeleted > 0 && (
-          <div
-            className="relative"
-            onMouseEnter={() => setHoveredTag("deleted")}
-            onMouseLeave={() => setHoveredTag(null)}
-          >
-            <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-1 text-xs text-red-700 border border-red-200">
-              <span className="font-semibold">-{statistics.totalDeleted}</span>
-              <span>删除</span>
-            </span>
-            {hoveredTag === "deleted" && deleted.length > 0 && (
-              <div className="absolute z-50 left-0 top-full mt-1 w-80 p-3 bg-white border border-slate-200 rounded-lg shadow-lg text-xs">
-                <div className="font-semibold mb-2 text-red-700">删除内容：</div>
-                <ul className="space-y-1 text-slate-700">
-                  {deleted.map((item, idx) => (
-                    <li key={idx} className="list-disc list-inside">{item}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* 摘要（可悬浮查看完整内容） */}
-      {summary && (
-        <div
-          className="relative"
-          onMouseEnter={() => setHoveredSummary(true)}
-          onMouseLeave={() => setHoveredSummary(false)}
-        >
-          <div className="text-xs text-slate-600 line-clamp-2 cursor-help">
-            {summary}
-          </div>
-          {hoveredSummary && (
-            <div className="absolute z-50 left-0 top-full mt-1 w-96 p-3 bg-white border border-slate-200 rounded-lg shadow-lg text-xs text-slate-700">
-              <div className="font-semibold mb-1">完整摘要：</div>
-              <div>{summary}</div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* 查看详情按钮 */}
+    <>
       <button
-        onClick={onViewDetail}
-        className="text-xs text-blue-600 hover:text-blue-800 self-start"
+        ref={buttonRef}
+        onClick={onButtonClick}
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs hover:bg-slate-50"
       >
-        查看详情 →
+        查看详情
       </button>
+      {tooltipContent}
+    </>
+  );
+}
+
+// 对比结果展示组件（只显示标签，可点击展开）
+function ComparisonResultDisplay({
+  structured,
+  onExpandToggle,
+}: {
+  structured: ComparisonStructuredData;
+  onExpandToggle: () => void;
+}) {
+  const { statistics } = structured;
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {statistics.totalAdded > 0 && (
+        <button
+          onClick={onExpandToggle}
+          className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
+        >
+          <span className="font-semibold">+{statistics.totalAdded}</span>
+          <span>新增</span>
+        </button>
+      )}
+      {statistics.totalModified > 0 && (
+        <button
+          onClick={onExpandToggle}
+          className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
+        >
+          <span className="font-semibold">~{statistics.totalModified}</span>
+          <span>修改</span>
+        </button>
+      )}
+      {statistics.totalDeleted > 0 && (
+        <button
+          onClick={onExpandToggle}
+          className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-1 text-xs text-red-700 border border-red-200 hover:bg-red-100 transition-colors cursor-pointer"
+        >
+          <span className="font-semibold">-{statistics.totalDeleted}</span>
+          <span>删除</span>
+        </button>
+      )}
     </div>
+  );
+}
+
+// 对比结果卡片展开行组件（在表格的展开行中显示）
+function ComparisonCardsRow({
+  structured,
+  isOpen,
+  onToggle,
+  onViewFullReport,
+}: {
+  structured: ComparisonStructuredData;
+  isOpen: boolean;
+  onToggle: () => void;
+  onViewFullReport: () => void;
+}) {
+  if (!isOpen) return null;
+
+  const { added, modified, deleted } = structured;
+
+  return (
+    <tr className="bg-slate-50/50">
+      <td colSpan={6} className="px-4 py-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          {/* 卡片内容 */}
+          <div className="flex flex-row gap-3 mb-3">
+            {/* 新增内容卡片 */}
+            {added.length > 0 && (
+              <div className="flex-1 min-w-[280px] rounded-lg border-2 border-emerald-200 bg-emerald-50/50 p-3">
+                <div className="font-semibold mb-2 text-sm text-emerald-700 flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-200 text-emerald-800 text-xs font-bold">
+                    +
+                  </span>
+                  新增内容 ({added.length}项)
+                </div>
+                <ul className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto">
+                  {added.map((item, idx) => (
+                    <li key={idx} className="flex items-start gap-2">
+                      <span className="text-emerald-600 mt-0.5 flex-shrink-0">•</span>
+                      <span className="flex-1 break-words">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* 修改内容卡片 */}
+            {modified.length > 0 && (
+              <div className="flex-1 min-w-[280px] rounded-lg border-2 border-blue-200 bg-blue-50/50 p-3">
+                <div className="font-semibold mb-2 text-sm text-blue-700 flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-200 text-blue-800 text-xs font-bold">
+                    ~
+                  </span>
+                  修改内容 ({modified.length}项)
+                </div>
+                <ul className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto">
+                  {modified.map((item, idx) => (
+                    <li key={idx} className="flex items-start gap-2">
+                      <span className="text-blue-600 mt-0.5 flex-shrink-0">•</span>
+                      <span className="flex-1 break-words">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* 删除内容卡片 */}
+            {deleted.length > 0 && (
+              <div className="flex-1 min-w-[280px] rounded-lg border-2 border-red-200 bg-red-50/50 p-3">
+                <div className="font-semibold mb-2 text-sm text-red-700 flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-200 text-red-800 text-xs font-bold">
+                    -
+                  </span>
+                  删除内容 ({deleted.length}项)
+                </div>
+                <ul className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto">
+                  {deleted.map((item, idx) => (
+                    <li key={idx} className="flex items-start gap-2">
+                      <span className="text-red-600 mt-0.5 flex-shrink-0">•</span>
+                      <span className="flex-1 break-words">{item}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+
+          {/* 收起按钮 - 另起一行 */}
+          <div className="flex justify-end mb-3">
+            <button
+              onClick={onToggle}
+              className="text-xs text-slate-500 hover:text-slate-700"
+            >
+              收起
+            </button>
+          </div>
+
+          {/* 查看完整报告按钮 - 在底部右侧 */}
+          <div className="flex justify-end">
+            <button
+              onClick={onViewFullReport}
+              className="rounded-xl bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700 transition-colors"
+            >
+              查看完整报告
+            </button>
+          </div>
+        </div>
+      </td>
+    </tr>
   );
 }
 
@@ -531,6 +650,7 @@ interface ComparisonTableProps {
 export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTableProps) {
   const { comparisons, removeFile, updateComparison, addFile } = useFileContext();
   const [openPreviews, setOpenPreviews] = useState<Set<string>>(new Set());
+  const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
   const [detailModal, setDetailModal] = useState<{ open: boolean; row: ComparisonRow | null }>({
     open: false,
     row: null,
@@ -538,6 +658,18 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
 
   function togglePreview(id: string) {
     setOpenPreviews((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleCards(id: string) {
+    setExpandedCards((prev) => {
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
@@ -841,11 +973,11 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                       )}
                     </td>
 
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" style={{ whiteSpace: 'normal' }}>
                       {row.comparisonStatus === "done" && row.comparisonStructured && row.isJsonFormat ? (
                         <ComparisonResultDisplay
                           structured={row.comparisonStructured}
-                          onViewDetail={() => setDetailModal({ open: true, row })}
+                          onExpandToggle={() => toggleCards(row.id)}
                         />
                       ) : row.comparisonStatus === "done" ? (
                         <div className="flex items-center gap-2">
@@ -893,16 +1025,27 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                               <button
                                 onClick={() => handleCompare(row)}
                                 disabled={row.comparisonStatus === "comparing"}
-                                className="rounded-xl bg-slate-900 px-3 py-1.5 text-xs text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="rounded-xl bg-slate-700 px-3 py-1.5 text-xs text-white hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
                               >
-                                政策单独对比
+                                政策对比
                               </button>
-                                 <button
-                                   onClick={() => setDetailModal({ open: true, row })}
-                                   className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs hover:bg-slate-50"
-                                 >
-                                   查看详情
-                                 </button>
+                              <button
+                                onClick={() => showToast("该功能正在开发中")}
+                                className="rounded-xl border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100"
+                              >
+                                佣金对比
+                              </button>
+                                 <SummaryTooltip
+                                   summary={row.comparisonStructured?.summary}
+                                   rowId={row.id}
+                                   onButtonClick={() => {
+                                     if (row.comparisonStructured && row.isJsonFormat) {
+                                       toggleCards(row.id);
+                                     } else {
+                                       setDetailModal({ open: true, row });
+                                     }
+                                   }}
+                                 />
                             </>
                           ) : (
                             <button
@@ -920,13 +1063,23 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                               className="rounded-xl bg-slate-200 px-3 py-1.5 text-xs text-slate-400 cursor-not-allowed"
                               title={`请先上传新年度和旧年度的文件。状态：新年度文件${hasThisYear ? "✓" : "✗"}，旧年度文件${hasLastYear ? "✓" : "✗"}，新年度file_id${hasThisYearFileId ? "✓" : "✗"}，旧年度file_id${hasLastYearFileId ? "✓" : "✗"}`}
                             >
-                              政策单独对比
+                              政策对比
                             </button>
                           );
                         })()}
                       </div>
                     </td>
                   </tr>
+                  {/* 对比结果卡片展开行 */}
+                  {row.comparisonStatus === "done" && row.comparisonStructured && row.isJsonFormat && (
+                    <ComparisonCardsRow
+                      key={`cards-${row.id}`}
+                      structured={row.comparisonStructured}
+                      isOpen={expandedCards.has(row.id)}
+                      onToggle={() => toggleCards(row.id)}
+                      onViewFullReport={() => setDetailModal({ open: true, row })}
+                    />
+                  )}
                   </Fragment>
                 );
               })
