@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Settings } from "./settings";
+import { VERSION_INFO, formatUpdateTime } from "@/lib/version";
 
 interface HeaderProps {
   username: string;
@@ -24,6 +25,12 @@ export function Header({ username, onLogout }: HeaderProps) {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* 版本号显示 */}
+            <div className="flex flex-col items-end border-r border-slate-200 pr-3 mr-1">
+              <div className="text-base font-bold text-blue-600">v{VERSION_INFO.version}</div>
+              <div className="text-xs text-slate-500 mt-0.5">更新于 {formatUpdateTime(VERSION_INFO.updateTime)}</div>
+            </div>
+            
             <div className="flex items-center gap-2 text-sm text-slate-600">
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
