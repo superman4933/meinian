@@ -4,14 +4,14 @@ import { createContext, useContext, useState, ReactNode } from "react";
 
 export interface FileInfo {
   id: string;
-  file_id: string; // 扣子的file_id
+  file_url: string; // 文件访问URL（七牛云）
   name: string;
   size: number;
   sizeFormatted: string;
   city: string;
   type: "thisYear" | "lastYear";
   uploadTime: Date;
-  url?: string; // 文件预览URL
+  url?: string; // 文件预览URL（与file_url相同）
   uploadStatus: "uploading" | "success" | "error";
   error?: string;
 }

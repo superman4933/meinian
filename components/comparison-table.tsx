@@ -127,9 +127,10 @@ function FileDisplay({
     <div className="flex items-start gap-2 group">
       <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-slate-100 flex-shrink-0 text-xs">📄</span>
       <div className="flex-1 min-w-0" style={{ width: "140px", maxWidth: "140px" }}>
-        <div
-          className="font-medium text-left text-sm leading-tight text-slate-700"
-          title={file.name}
+        <button
+          onClick={onPreview}
+          className="font-medium text-left text-sm leading-tight text-slate-700 hover:text-blue-600 cursor-pointer w-full"
+          title={`点击打开: ${file.name}`}
           style={{
             display: "-webkit-box",
             WebkitLineClamp: 2,
@@ -140,7 +141,7 @@ function FileDisplay({
           }}
         >
           {file.name}
-        </div>
+        </button>
         <div className="text-xs text-slate-500 mt-1">{file.sizeFormatted}</div>
       </div>
       <button
@@ -806,8 +807,9 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
   };
 
   const handleFilePreview = (file: FileInfo) => {
-    if (file.url) {
-      window.open(file.url, "_blank");
+    const fileUrl = file.file_url || file.url;
+    if (fileUrl) {
+      window.open(fileUrl, "_blank");
     } else {
       showToast("文件预览链接不可用", "error");
     }
@@ -839,7 +841,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       // 创建文件信息
       const fileInfo = {
         id: tempId,
-        file_id: "",
+        file_url: "",
         name: file.name,
         size: file.size,
         sizeFormatted: formatFileSize(file.size),
@@ -870,14 +872,17 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
 
         const data = await response.json();
 
-        // 记录上传响应数据（仅开发环境）
-        if (process.env.NODE_ENV === 'development') {
-          console.log("对比列表文件上传响应数据:", {
-            fileName: file.name,
-            response: data,
-            file_id: data.file_id,
-            success: data.success,
-          });
+        // 记录上传响应数据
+        console.log("对比列表文件上传响应数据:", {
+          fileName: file.name,
+          response: data,
+          file_url: data.file_url,
+          success: data.success,
+        });
+
+        // 输出文件访问地址
+        if (data.success && data.file_url) {
+          console.log(`✅ 文件上传成功！访问地址: ${data.file_url}`);
         }
 
         if (!response.ok || !data.success) {
@@ -890,6 +895,8 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
               errorMessage = "文件过大，请选择小于 20MB 的文件";
             } else if (response.status >= 500) {
               errorMessage = "服务器错误，请稍后重试";
+            } else if (data.error_source === "七牛云") {
+              errorMessage = `七牛云错误: ${data.message || "未知错误"}`;
             } else if (data.error_source === "扣子API") {
               errorMessage = `扣子API错误: ${data.message || "未知错误"}`;
             } else {
@@ -902,10 +909,14 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         }
 
         // 更新文件信息（创建新对象）
+        if (!data.file_url) {
+          throw new Error("上传成功但未返回文件URL");
+        }
+
         const updatedFileInfo = {
           ...fileInfo,
-          file_id: data.file_id || "",
-          url: data.url || null,
+          file_url: data.file_url,
+          url: data.file_url,
           uploadStatus: "success" as const,
         };
 
@@ -913,7 +924,8 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         if (process.env.NODE_ENV === 'development') {
           console.log("对比列表更新文件信息:", {
             fileName: file.name,
-            fileId: updatedFileInfo.file_id,
+            fileId: updatedFileInfo.id,
+            fileUrl: updatedFileInfo.file_url,
             city: updatedFileInfo.city,
             type: updatedFileInfo.type,
             fullInfo: updatedFileInfo,
@@ -948,7 +960,10 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       return;
     }
 
-    if (!row.thisYearFile.file_id || !row.lastYearFile.file_id) {
+    const oldFileUrl = row.lastYearFile.file_url || row.lastYearFile.url;
+    const newFileUrl = row.thisYearFile.file_url || row.thisYearFile.url;
+
+    if (!oldFileUrl || !newFileUrl) {
       showToast("文件尚未上传完成，请稍候", "info");
       return;
     }
@@ -966,21 +981,20 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           "x-coze-token": token,
         },
         body: JSON.stringify({
-          file1_id: row.lastYearFile.file_id,
-          file2_id: row.thisYearFile.file_id,
+          file1_url: oldFileUrl,
+          file2_url: newFileUrl,
           prompt: getPolicyPrompt(),
         }),
       });
 
       const data = await response.json();
 
-      // 记录对比接口的原始返回（仅开发环境）
-      if (process.env.NODE_ENV === 'development') {
-        console.log("政策单独对比 - 接口原始返回:", {
+      // 记录对比接口的原始返回
+      console.log("政策单独对比 - 接口原始返回:", {
         rowId: row.id,
         company: row.company,
-        file1_id: row.lastYearFile.file_id,
-        file2_id: row.thisYearFile.file_id,
+        file1_url: oldFileUrl,
+        file2_url: newFileUrl,
         responseStatus: response.status,
         responseOk: response.ok,
         rawResponse: JSON.stringify(data, null, 2),
@@ -988,8 +1002,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         hasData: !!data.data,
         executeId: data.execute_id,
         debugUrl: data.debug_url,
-        });
-      }
+      });
 
       if (!response.ok || !data.success) {
         // 区分不同类型的错误
@@ -1008,18 +1021,15 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           errorMessage = data.message || "对比失败";
         }
         
-        if (process.env.NODE_ENV === 'development') {
-          console.error("政策单独对比失败:", {
-            rowId: row.id,
-            error: errorMessage,
-            fullError: data,
-          });
-        }
+        console.error("政策单独对比失败:", {
+          rowId: row.id,
+          error: errorMessage,
+          fullError: data,
+        });
         throw new Error(errorMessage);
       }
 
-      if (process.env.NODE_ENV === 'development') {
-        console.log("政策单独对比成功:", {
+      console.log("政策单独对比成功:", {
         rowId: row.id,
         company: row.company,
         resultData: data.data,
@@ -1027,8 +1037,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         structured: data.structured,
         isJsonFormat: data.isJsonFormat,
         resultType: typeof data.data,
-        });
-      }
+      });
 
       // 保存结果（可能是结构化数据或原始内容）
       const resultContent = data.markdown || data.data || "对比完成";
@@ -1052,7 +1061,9 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
   // 过滤对比列表
   const filteredComparisons = comparisons.filter((row) => {
     const hasBothFiles = row.thisYearFile && row.lastYearFile;
-    const hasBothFileIds = hasBothFiles && row.thisYearFile!.file_id && row.lastYearFile!.file_id;
+    const hasThisYearUrl = hasBothFiles && (row.thisYearFile!.file_url || row.thisYearFile!.url);
+    const hasLastYearUrl = hasBothFiles && (row.lastYearFile!.file_url || row.lastYearFile!.url);
+    const hasBothFileIds = hasThisYearUrl && hasLastYearUrl;
 
     switch (filterStatus) {
       case "可比对":
@@ -1181,8 +1192,8 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                           // 调试日志：检查文件状态
                           const hasThisYear = !!row.thisYearFile;
                           const hasLastYear = !!row.lastYearFile;
-                          const hasThisYearFileId = !!(row.thisYearFile?.file_id);
-                          const hasLastYearFileId = !!(row.lastYearFile?.file_id);
+                          const hasThisYearUrl = !!(row.thisYearFile?.file_url || row.thisYearFile?.url);
+                          const hasLastYearUrl = !!(row.lastYearFile?.file_url || row.lastYearFile?.url);
                           
                           if (hasThisYear && hasLastYear) {
                             if (process.env.NODE_ENV === 'development') {
@@ -1190,16 +1201,16 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                               company: row.company,
                               hasThisYearFile: hasThisYear,
                               hasLastYearFile: hasLastYear,
-                              thisYearFileId: row.thisYearFile?.file_id || "无",
-                              lastYearFileId: row.lastYearFile?.file_id || "无",
+                              thisYearFileUrl: row.thisYearFile?.file_url || row.thisYearFile?.url || "无",
+                              lastYearFileUrl: row.lastYearFile?.file_url || row.lastYearFile?.url || "无",
                               thisYearFile: row.thisYearFile,
                               lastYearFile: row.lastYearFile,
-                              canCompare: hasThisYearFileId && hasLastYearFileId,
+                              canCompare: hasThisYearUrl && hasLastYearUrl,
                               });
                             }
                           }
                           
-                          return hasThisYear && hasLastYear && hasThisYearFileId && hasLastYearFileId ? (
+                          return hasThisYear && hasLastYear && hasThisYearUrl && hasLastYearUrl ? (
                             <>
                               <button
                                 onClick={() => handleCompare(row)}
@@ -1233,8 +1244,8 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                                   console.log("按钮被禁用，文件状态:", {
                                     hasThisYear,
                                     hasLastYear,
-                                    hasThisYearFileId,
-                                    hasLastYearFileId,
+                                    hasThisYearUrl,
+                                    hasLastYearUrl,
                                     thisYearFile: row.thisYearFile,
                                     lastYearFile: row.lastYearFile,
                                   });
@@ -1242,7 +1253,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                               }}
                               disabled={true}
                               className="rounded-xl bg-slate-200 px-3 py-1.5 text-xs text-slate-400 cursor-not-allowed"
-                              title={`请先上传新年度和旧年度的文件。状态：新年度文件${hasThisYear ? "✓" : "✗"}，旧年度文件${hasLastYear ? "✓" : "✗"}，新年度file_id${hasThisYearFileId ? "✓" : "✗"}，旧年度file_id${hasLastYearFileId ? "✓" : "✗"}`}
+                              title={`请先上传新年度和旧年度的文件。状态：新年度文件${hasThisYear ? "✓" : "✗"}，旧年度文件${hasLastYear ? "✓" : "✗"}，新年度URL${hasThisYearUrl ? "✓" : "✗"}，旧年度URL${hasLastYearUrl ? "✓" : "✗"}`}
                             >
                               政策对比
                             </button>
@@ -1280,9 +1291,9 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
             const displayCompany = row.company.startsWith("未知_") ? "未知" : row.company;
             const hasThisYear = !!row.thisYearFile;
             const hasLastYear = !!row.lastYearFile;
-            const hasThisYearFileId = !!(row.thisYearFile?.file_id);
-            const hasLastYearFileId = !!(row.lastYearFile?.file_id);
-            const canCompare = hasThisYear && hasLastYear && hasThisYearFileId && hasLastYearFileId;
+            const hasThisYearUrl = !!(row.thisYearFile?.file_url || row.thisYearFile?.url);
+            const hasLastYearUrl = !!(row.lastYearFile?.file_url || row.lastYearFile?.url);
+            const canCompare = hasThisYear && hasLastYear && hasThisYearUrl && hasLastYearUrl;
 
             return (
               <div key={row.id} className="p-4 space-y-3">

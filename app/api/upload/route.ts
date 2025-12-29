@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCozeToken } from "@/lib/coze-config";
+import * as qiniu from "qiniu";
+import { QINIU_CONFIG } from "@/lib/qiniu-config";
+import { nanoid } from "nanoid";
 
 // 处理 GET 请求，返回方法不允许的错误
 export async function GET() {
@@ -21,99 +23,112 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 调用扣子API上传文件
-    const cozeFormData = new FormData();
-    cozeFormData.append("file", file);
+    // 读取文件内容
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
 
-    // 获取扣子API Token（优先从请求头读取，如果没有则使用默认值）
-    const tokenFromHeader = request.headers.get("x-coze-token");
-    const cozeToken = tokenFromHeader || getCozeToken(request);
+    // 生成唯一文件名
+    const fileExtension = file.name.split('.').pop() || '';
+    const fileName = `${Date.now()}-${nanoid()}.${fileExtension}`;
 
-    const response = await fetch("https://api.coze.cn/v1/files/upload", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${cozeToken}`,
-        // 注意：不要设置 Content-Type，让浏览器自动设置，包含 boundary
-      },
-      body: cozeFormData,
+    // 配置七牛云
+    const mac = new qiniu.auth.digest.Mac(QINIU_CONFIG.accessKey, QINIU_CONFIG.secretKey);
+    const putPolicy = new qiniu.rs.PutPolicy({
+      scope: QINIU_CONFIG.bucket,
     });
+    const uploadToken = putPolicy.uploadToken(mac);
 
-    let data;
-    try {
-      data = await response.json();
-    } catch (e) {
-      // 如果响应不是JSON格式
-      const text = await response.text();
-      if (process.env.NODE_ENV === 'development') {
-        console.error("扣子API返回非JSON响应:", {
-          status: response.status,
-          statusText: response.statusText,
-          body: text,
-        });
-      }
-      
-      return NextResponse.json(
-        {
-          success: false,
-          message: `扣子API返回错误 (${response.status}): ${response.statusText}`,
-          error_source: "扣子API",
-          status: response.status,
-          response_body: text,
-        },
-        { status: response.status }
+    // 上传到七牛云
+    const config = new qiniu.conf.Config();
+    const formUploader = new qiniu.form_up.FormUploader(config);
+    const putExtra = new qiniu.form_up.PutExtra();
+
+    return new Promise<NextResponse>((resolve) => {
+      formUploader.put(
+        uploadToken,
+        fileName,
+        buffer,
+        putExtra,
+        (respErr, respBody, respInfo) => {
+          if (respErr) {
+            console.error("七牛云上传失败:", respErr);
+            resolve(
+              NextResponse.json(
+                {
+                  success: false,
+                  message: `七牛云上传失败: ${respErr.message || "未知错误"}`,
+                  error_source: "七牛云",
+                },
+                { status: 500 }
+              )
+            );
+            return;
+          }
+
+          if (respInfo.statusCode !== 200) {
+            console.error("七牛云上传失败:", {
+              statusCode: respInfo.statusCode,
+              body: respBody,
+            });
+            resolve(
+              NextResponse.json(
+                {
+                  success: false,
+                  message: `七牛云上传失败 (${respInfo.statusCode}): ${respBody?.error || "未知错误"}`,
+                  error_source: "七牛云",
+                  status: respInfo.statusCode,
+                  details: respBody,
+                },
+                { status: respInfo.statusCode }
+              )
+            );
+            return;
+          }
+
+          // 构建文件访问URL（确保域名末尾有斜杠，key 开头没有斜杠）
+          const domain = QINIU_CONFIG.domain.endsWith('/') 
+            ? QINIU_CONFIG.domain 
+            : `${QINIU_CONFIG.domain}/`;
+          const key = respBody.key?.startsWith('/') 
+            ? respBody.key.slice(1) 
+            : respBody.key;
+          const fileUrl = key ? `${domain}${key}` : null;
+
+          console.log("文件上传成功 - 七牛云返回数据:", {
+            fileName: file.name,
+            fileSize: file.size,
+            qiniuKey: respBody.key,
+            fileUrl: fileUrl,
+          });
+
+          if (!fileUrl) {
+            resolve(
+              NextResponse.json(
+                {
+                  success: false,
+                  message: "文件上传成功但无法获取访问URL",
+                  error_source: "七牛云",
+                },
+                { status: 500 }
+              )
+            );
+            return;
+          }
+
+          resolve(
+            NextResponse.json({
+              success: true,
+              file_url: fileUrl,
+              file_name: file.name,
+              file_size: file.size,
+              url: fileUrl,
+            })
+          );
+        }
       );
-    }
-
-    if (!response.ok) {
-      if (process.env.NODE_ENV === 'development') {
-        console.error("扣子API上传失败:", {
-          status: response.status,
-          statusText: response.statusText,
-          data: data,
-        });
-      }
-      
-      return NextResponse.json(
-        {
-          success: false,
-          message: `扣子API返回错误: ${data.message || data.error || response.statusText || "未知错误"}`,
-          error_source: "扣子API",
-          error_code: data.code || data.error_code,
-          status: response.status,
-          details: data,
-        },
-        { status: response.status }
-      );
-    }
-
-    // 记录上传成功的详细信息（仅开发环境）
-    const fileId = data.id || data.file_id || data.data?.id || data.data?.file_id;
-    if (process.env.NODE_ENV === 'development') {
-      console.log("文件上传成功 - 扣子API返回数据:", {
-        fileName: file.name,
-        fileSize: file.size,
-        rawResponse: JSON.stringify(data, null, 2),
-        extractedFileId: fileId,
-        allKeys: Object.keys(data),
-      });
-    }
-
-    return NextResponse.json({
-      success: true,
-      file_id: fileId,
-      file_name: file.name,
-      file_size: file.size,
-      url: data.url || data.download_url || data.data?.url || null,
-      // 返回原始数据用于调试
-      _debug: {
-        rawResponse: data,
-        extractedFileId: fileId,
-      },
     });
   } catch (error: any) {
-    if (process.env.NODE_ENV === 'development') {
-      console.error("Upload error:", error);
-    }
+    console.error("Upload error:", error);
     return NextResponse.json(
       {
         success: false,

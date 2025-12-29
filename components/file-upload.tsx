@@ -56,7 +56,7 @@ export function FileUpload({ type }: FileUploadProps) {
     // 创建文件信息
     const fileInfo = {
       id: tempId,
-      file_id: "",
+      file_url: "",
       name: file.name,
       size: file.size,
       sizeFormatted: formatFileSize(file.size),
@@ -87,14 +87,17 @@ export function FileUpload({ type }: FileUploadProps) {
 
       const data = await response.json();
 
-      // 记录上传响应数据（仅开发环境）
-      if (process.env.NODE_ENV === 'development') {
-        console.log("文件上传响应数据:", {
-          fileName: file.name,
-          response: data,
-          file_id: data.file_id,
-          success: data.success,
-        });
+      // 记录上传响应数据
+      console.log("文件上传响应数据:", {
+        fileName: file.name,
+        response: data,
+        file_url: data.file_url,
+        success: data.success,
+      });
+
+      // 输出文件访问地址
+      if (data.success && data.file_url) {
+        console.log(`✅ 文件上传成功！访问地址: ${data.file_url}`);
       }
 
       if (!response.ok || !data.success) {
@@ -119,10 +122,14 @@ export function FileUpload({ type }: FileUploadProps) {
       }
 
       // 更新文件信息（创建新对象）
+      if (!data.file_url) {
+        throw new Error("上传成功但未返回文件URL");
+      }
+
       const updatedFileInfo = {
         ...fileInfo,
-        file_id: data.file_id || "",
-        url: data.url || null,
+        file_url: data.file_url,
+        url: data.file_url,
         uploadStatus: "success" as const,
       };
 
@@ -130,7 +137,7 @@ export function FileUpload({ type }: FileUploadProps) {
       if (process.env.NODE_ENV === 'development') {
         console.log("更新文件信息:", {
           fileName: file.name,
-          fileId: updatedFileInfo.file_id,
+          fileId: updatedFileInfo.id,
           city: updatedFileInfo.city,
           type: updatedFileInfo.type,
           fullInfo: updatedFileInfo,

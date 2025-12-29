@@ -27,8 +27,8 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
       (c) =>
         c.thisYearFile &&
         c.lastYearFile &&
-        c.thisYearFile.file_id &&
-        c.lastYearFile.file_id &&
+        (c.thisYearFile.file_url || c.thisYearFile.url) &&
+        (c.lastYearFile.file_url || c.lastYearFile.url) &&
         c.comparisonStatus !== "comparing"
     );
 
@@ -67,6 +67,9 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
           // 获取token并添加到请求头
           const token = getCozeTokenClient();
           
+          const oldFileUrl = row.lastYearFile!.file_url || row.lastYearFile!.url;
+          const newFileUrl = row.thisYearFile!.file_url || row.thisYearFile!.url;
+
           const response = await fetch("/api/compare", {
             method: "POST",
             headers: {
@@ -74,8 +77,8 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
               "x-coze-token": token,
             },
             body: JSON.stringify({
-              file1_id: row.lastYearFile!.file_id,
-              file2_id: row.thisYearFile!.file_id,
+              file1_url: oldFileUrl,
+              file2_url: newFileUrl,
               prompt: type === "policy" 
                 ? getPolicyPrompt()
                 : "请分析这两个佣金文件的差异",
@@ -89,8 +92,8 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
             console.log(`政策一键对比 [${row.company}] - 接口原始返回:`, {
             rowId: row.id,
             company: row.company,
-            file1_id: row.lastYearFile!.file_id,
-            file2_id: row.thisYearFile!.file_id,
+            file1_url: oldFileUrl,
+            file2_url: newFileUrl,
             responseStatus: response.status,
             responseOk: response.ok,
             rawResponse: JSON.stringify(data, null, 2),
@@ -112,17 +115,15 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
             throw new Error(data.message || "对比失败");
           }
 
-          if (process.env.NODE_ENV === 'development') {
-            console.log(`政策一键对比成功 [${row.company}]:`, {
+          console.log(`政策一键对比成功 [${row.company}]:`, {
             rowId: row.id,
             company: row.company,
             resultData: data.data,
             markdown: data.markdown,
             structured: data.structured,
             isJsonFormat: data.isJsonFormat,
-              resultType: typeof data.data,
-            });
-          }
+            resultType: typeof data.data,
+          });
 
           // 保存结果（可能是结构化数据或原始内容）
           const resultContent = data.markdown || data.data || "对比完成";
@@ -209,8 +210,8 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
               (c) =>
                 c.thisYearFile &&
                 c.lastYearFile &&
-                c.thisYearFile.file_id &&
-                c.lastYearFile.file_id
+                (c.thisYearFile.file_url || c.thisYearFile.url) &&
+                (c.lastYearFile.file_url || c.lastYearFile.url)
             ).length === 0}
             className="rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
           >

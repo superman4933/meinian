@@ -6,11 +6,25 @@ const WORKFLOW_ID = "7588132283023786047";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { file1_id, file2_id, prompt } = body;
+    const { file1_url, file2_url, prompt } = body;
 
-    if (!file1_id || !file2_id) {
+    if (!file1_url || !file2_url) {
       return NextResponse.json(
-        { success: false, message: "缺少文件ID" },
+        { success: false, message: "缺少文件URL" },
+        { status: 400 }
+      );
+    }
+
+    // 验证URL格式
+    if (!file1_url.startsWith('http://') && !file1_url.startsWith('https://')) {
+      return NextResponse.json(
+        { success: false, message: "文件URL格式不正确" },
+        { status: 400 }
+      );
+    }
+    if (!file2_url.startsWith('http://') && !file2_url.startsWith('https://')) {
+      return NextResponse.json(
+        { success: false, message: "文件URL格式不正确" },
         { status: 400 }
       );
     }
@@ -23,20 +37,18 @@ export async function POST(request: NextRequest) {
     const requestBody = {
       workflow_id: WORKFLOW_ID,
       parameters: {
-        oldFile: JSON.stringify({ file_id: file1_id }),
-        newFile: JSON.stringify({ file_id: file2_id }),
+        oldFile: file1_url,
+        newFile: file2_url,
         prompt: prompt || "请分析这两个文件的内容差异",
       },
     };
     
-    if (process.env.NODE_ENV === 'development') {
-      console.log("调用扣子工作流API - 请求参数:", {
-        file1_id,
-        file2_id,
-        prompt,
-        requestBody: JSON.stringify(requestBody, null, 2),
-      });
-    }
+    console.log("调用扣子工作流API - 请求参数:", {
+      file1_url,
+      file2_url,
+      prompt,
+      requestBody: JSON.stringify(requestBody, null, 2),
+    });
 
     // 调用扣子工作流API
     const response = await fetch("https://api.coze.cn/v1/workflow/run", {
@@ -54,13 +66,11 @@ export async function POST(request: NextRequest) {
     } catch (e) {
       // 如果响应不是JSON格式
       const text = await response.text();
-      if (process.env.NODE_ENV === 'development') {
-        console.error("扣子工作流API返回非JSON响应:", {
-          status: response.status,
-          statusText: response.statusText,
-          body: text,
-        });
-      }
+      console.error("扣子工作流API返回非JSON响应:", {
+        status: response.status,
+        statusText: response.statusText,
+        body: text,
+      });
       
       return NextResponse.json(
         {
@@ -74,27 +84,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 记录扣子API的原始返回数据（仅开发环境）
-    if (process.env.NODE_ENV === 'development') {
-      console.log("扣子工作流API - 原始返回数据:", {
-        status: response.status,
-        statusText: response.statusText,
-        rawResponse: JSON.stringify(data, null, 2),
-        allKeys: Object.keys(data),
-        hasData: !!data.data,
-        hasExecuteId: !!data.execute_id,
-        hasDebugUrl: !!data.debug_url,
-      });
-    }
+    // 记录扣子API的原始返回数据
+    console.log("扣子工作流API - 原始返回数据:", {
+      status: response.status,
+      statusText: response.statusText,
+      rawResponse: JSON.stringify(data, null, 2),
+      allKeys: Object.keys(data),
+      hasData: !!data.data,
+      hasExecuteId: !!data.execute_id,
+      hasDebugUrl: !!data.debug_url,
+    });
 
     if (!response.ok) {
-      if (process.env.NODE_ENV === 'development') {
-        console.error("扣子工作流API调用失败:", {
-          status: response.status,
-          statusText: response.statusText,
-          errorData: data,
-        });
-      }
+      console.error("扣子工作流API调用失败:", {
+        status: response.status,
+        statusText: response.statusText,
+        errorData: data,
+      });
       
       return NextResponse.json(
         {
@@ -169,16 +175,14 @@ export async function POST(request: NextRequest) {
             structuredData = parsedJson;
             isJsonFormat = true;
             markdownContent = parsedJson.detailed || null;
-            if (process.env.NODE_ENV === 'development') {
-              console.log("检测到JSON格式的结构化数据:", {
-                hasSummary: !!parsedJson.summary,
-                hasAdded: !!parsedJson.added,
-                hasModified: !!parsedJson.modified,
-                hasDeleted: !!parsedJson.deleted,
-                hasStatistics: !!parsedJson.statistics,
-                hasDetailed: !!parsedJson.detailed,
-              });
-            }
+            console.log("检测到JSON格式的结构化数据:", {
+              hasSummary: !!parsedJson.summary,
+              hasAdded: !!parsedJson.added,
+              hasModified: !!parsedJson.modified,
+              hasDeleted: !!parsedJson.deleted,
+              hasStatistics: !!parsedJson.statistics,
+              hasDetailed: !!parsedJson.detailed,
+            });
           } else {
             // 不是预期的JSON结构，当作markdown处理
             markdownContent = extractedContent;
@@ -202,16 +206,14 @@ export async function POST(request: NextRequest) {
           structuredData = extractedContent;
           isJsonFormat = true;
           markdownContent = extractedContent.detailed || null;
-          if (process.env.NODE_ENV === 'development') {
-            console.log("检测到JSON格式的结构化数据（对象）:", {
-              hasSummary: !!extractedContent.summary,
-              hasAdded: !!extractedContent.added,
-              hasModified: !!extractedContent.modified,
-              hasDeleted: !!extractedContent.deleted,
-              hasStatistics: !!extractedContent.statistics,
-              hasDetailed: !!extractedContent.detailed,
-            });
-          }
+          console.log("检测到JSON格式的结构化数据（对象）:", {
+            hasSummary: !!extractedContent.summary,
+            hasAdded: !!extractedContent.added,
+            hasModified: !!extractedContent.modified,
+            hasDeleted: !!extractedContent.deleted,
+            hasStatistics: !!extractedContent.statistics,
+            hasDetailed: !!extractedContent.detailed,
+          });
         } else {
           // 不是预期的JSON结构
           rawContent = JSON.stringify(extractedContent);
@@ -222,22 +224,18 @@ export async function POST(request: NextRequest) {
         markdownContent = extractedContent;
       }
       
-      if (process.env.NODE_ENV === 'development') {
-        console.log("数据解析结果:", {
-          isJsonFormat,
-          hasStructuredData: !!structuredData,
-          hasMarkdown: !!markdownContent,
-          markdownLength: markdownContent?.length,
-          markdownPreview: markdownContent?.substring(0, 200),
-        });
-      }
+      console.log("数据解析结果:", {
+        isJsonFormat,
+        hasStructuredData: !!structuredData,
+        hasMarkdown: !!markdownContent,
+        markdownLength: markdownContent?.length,
+        markdownPreview: markdownContent?.substring(0, 200),
+      });
     } catch (parseError: any) {
-      if (process.env.NODE_ENV === 'development') {
-        console.error("解析数据失败:", {
-          error: parseError.message,
-          rawData: data.data,
-        });
-      }
+      console.error("解析数据失败:", {
+        error: parseError.message,
+        rawData: data.data,
+      });
       // 如果解析失败，使用原始数据
       rawContent = typeof data.data === 'string' ? data.data : JSON.stringify(data.data);
       markdownContent = rawContent;
@@ -255,23 +253,19 @@ export async function POST(request: NextRequest) {
       raw_data: data.data, // 保留原始数据用于调试
     };
     
-    if (process.env.NODE_ENV === 'development') {
-      console.log("扣子工作流API - 处理后的返回数据:", {
-        success: result.success,
-        hasData: !!result.data,
-        hasMarkdown: !!result.markdown,
-        dataType: typeof result.data,
-        executeId: result.execute_id,
-        debugUrl: result.debug_url,
-        fullResult: JSON.stringify(result, null, 2),
-      });
-    }
+    console.log("扣子工作流API - 处理后的返回数据:", {
+      success: result.success,
+      hasData: !!result.data,
+      hasMarkdown: !!result.markdown,
+      dataType: typeof result.data,
+      executeId: result.execute_id,
+      debugUrl: result.debug_url,
+      fullResult: JSON.stringify(result, null, 2),
+    });
 
     return NextResponse.json(result);
   } catch (error: any) {
-    if (process.env.NODE_ENV === 'development') {
-      console.error("Compare error:", error);
-    }
+    console.error("Compare error:", error);
     return NextResponse.json(
       {
         success: false,
