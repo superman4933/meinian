@@ -92,6 +92,34 @@ export default function StandardComparePage() {
     setIsLoggedIn(false);
   };
 
+  // 并发控制函数：限制同时执行的任务数
+  const limitConcurrency = async (
+    tasks: (() => Promise<void>)[],
+    limit: number
+  ): Promise<void> => {
+    const executing: Promise<void>[] = [];
+
+    for (const task of tasks) {
+      const promise = task().finally(() => {
+        // 任务完成后从执行队列中移除
+        const index = executing.indexOf(promise);
+        if (index > -1) {
+          executing.splice(index, 1);
+        }
+      });
+
+      executing.push(promise);
+
+      // 如果达到并发限制，等待至少一个任务完成
+      if (executing.length >= limit) {
+        await Promise.race(executing);
+      }
+    }
+
+    // 等待所有剩余任务完成
+    await Promise.all(executing);
+  };
+
   // 处理文件选择
   const handleFileSelect = async (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
@@ -120,10 +148,9 @@ export default function StandardComparePage() {
 
     setFiles((prev) => [...prev, ...fileInfos]);
 
-    // 逐个上传文件
-    for (let i = 0; i < fileInfos.length; i++) {
-      await uploadFile(newFiles[i], fileInfos[i].id);
-    }
+    // 并发上传文件，限制同时最多5个
+    const uploadTasks = fileInfos.map((fileInfo, index) => () => uploadFile(newFiles[index], fileInfo.id));
+    await limitConcurrency(uploadTasks, 5);
   };
 
   // 上传文件到七牛云
@@ -197,8 +224,10 @@ export default function StandardComparePage() {
           )
         );
 
-        // 上传成功后自动调用对比API
-        await compareFile(fileId, data.file_url);
+        // 上传成功后立即调用对比API（不等待，并行执行）
+        compareFile(fileId, data.file_url).catch((error) => {
+          console.error(`文件 ${fileId} 对比失败:`, error);
+        });
       } else {
         const errorMessage = data.message || "上传失败，请重试";
         setFiles((prev) =>
