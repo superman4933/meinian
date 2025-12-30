@@ -125,15 +125,34 @@ export default function StandardComparePage() {
     if (!fileList || fileList.length === 0) return;
 
     const newFiles: File[] = Array.from(fileList);
-    const totalFiles = files.length + newFiles.length;
+    
+    // 检查文件是否已存在（根据文件名）
+    const existingFileNames = new Set(files.map((f) => f.name));
+    const duplicateFiles: File[] = [];
+    const validFiles: File[] = [];
 
-    if (totalFiles > 20) {
-      showToast(`最多只能上传20个文件，当前已有${files.length}个，本次选择了${newFiles.length}个`, "error");
+    newFiles.forEach((file) => {
+      if (existingFileNames.has(file.name)) {
+        duplicateFiles.push(file);
+      } else {
+        validFiles.push(file);
+      }
+    });
+
+    // 如果所有文件都已存在，直接toast提示
+    if (duplicateFiles.length === newFiles.length) {
+      showToast(`所有文件都已存在列表中，共 ${duplicateFiles.length} 个文件`, "error");
       return;
     }
 
-    // 添加新文件到列表
-    const fileInfos: FileInfo[] = newFiles.map((file, index) => ({
+    // 检查单次选择文件数限制（最多20个）
+    if (newFiles.length > 20) {
+      showToast(`单次最多只能选择20个文件，本次选择了${newFiles.length}个`, "error");
+      return;
+    }
+
+    // 添加新文件到列表（只添加不重复的文件）
+    const fileInfos: FileInfo[] = validFiles.map((file, index) => ({
       id: `${Date.now()}-${index}-${Math.random()}`,
       name: file.name,
       size: file.size,
@@ -148,27 +167,81 @@ export default function StandardComparePage() {
 
     setFiles((prev) => [...prev, ...fileInfos]);
 
-    // 并发上传文件，限制同时最多5个
-    const uploadTasks = fileInfos.map((fileInfo, index) => () => uploadFile(newFiles[index], fileInfo.id));
+    // 并发上传文件，限制同时最多5个，并收集结果
+    const uploadResults: Array<{ fileName: string; success: boolean; error?: string }> = [];
+    const uploadTasks = fileInfos.map((fileInfo, index) => async () => {
+      const result = await uploadFile(validFiles[index], fileInfo.id);
+      uploadResults.push({
+        fileName: fileInfo.name,
+        success: result.success,
+        error: result.error,
+      });
+    });
+
     await limitConcurrency(uploadTasks, 5);
+
+    // 统计上传结果
+    const successCount = uploadResults.filter((r) => r.success).length;
+    const failCount = uploadResults.filter((r) => !r.success).length;
+    const failedFiles = uploadResults.filter((r) => !r.success);
+    const duplicateCount = duplicateFiles.length;
+
+    // 如果有重复文件，也计入失败
+    const totalFailCount = failCount + duplicateCount;
+    const totalCount = validFiles.length + duplicateFiles.length;
+
+    // 构建失败原因列表（去重并分类）
+    const failureReasons: string[] = [];
+    if (duplicateCount > 0) {
+      failureReasons.push(`${duplicateCount} 个文件已存在`);
+    }
+    
+    // 统计其他失败原因
+    const errorReasons = new Set<string>();
+    failedFiles.forEach((f) => {
+      if (f.error) {
+        errorReasons.add(f.error);
+      }
+    });
+    errorReasons.forEach((reason) => {
+      failureReasons.push(reason);
+    });
+
+    // 如果全部失败（包括重复文件），使用toast
+    if (successCount === 0 && totalFailCount > 0) {
+      const reasonText = failureReasons.length > 0 ? `，失败原因：${failureReasons.join("、")}` : "";
+      showToast(`本次上传了 ${totalCount} 个文件，全部失败${reasonText}`, "error");
+      return;
+    }
+
+    // 如果有成功有失败，使用确认弹窗
+    if (successCount > 0 && totalFailCount > 0) {
+      const reasonText = failureReasons.length > 0 ? `\n失败原因：${failureReasons.join("、")}` : "";
+      const message = `本次上传了 ${totalCount} 个文件\n成功：${successCount} 个\n失败：${totalFailCount} 个${reasonText}`;
+      alert(message);
+    }
   };
 
   // 上传文件到七牛云
-  const uploadFile = async (file: File, fileId: string) => {
+  const uploadFile = async (
+    file: File,
+    fileId: string
+  ): Promise<{ success: boolean; error?: string }> => {
     const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
     if (file.size > MAX_FILE_SIZE) {
+      const errorMsg = `文件大小超过限制（最大 20MB）`;
       setFiles((prev) =>
         prev.map((f) =>
           f.id === fileId
             ? {
                 ...f,
                 uploadStatus: "error" as const,
-                error: `文件大小超过限制（最大 20MB）`,
+                error: errorMsg,
               }
             : f
         )
       );
-      return;
+      return { success: false, error: errorMsg };
     }
 
     try {
@@ -205,7 +278,7 @@ export default function StandardComparePage() {
               : f
           )
         );
-        return;
+        return { success: false, error: errorMessage };
       }
 
       const data = await response.json();
@@ -228,6 +301,8 @@ export default function StandardComparePage() {
         compareFile(fileId, data.file_url).catch((error) => {
           console.error(`文件 ${fileId} 对比失败:`, error);
         });
+
+        return { success: true };
       } else {
         const errorMessage = data.message || "上传失败，请重试";
         setFiles((prev) =>
@@ -241,6 +316,7 @@ export default function StandardComparePage() {
               : f
           )
         );
+        return { success: false, error: errorMessage };
       }
     } catch (error: any) {
       // 区分网络错误和其他错误
@@ -259,6 +335,7 @@ export default function StandardComparePage() {
             : f
         )
       );
+      return { success: false, error: errorMessage };
     }
   };
 
@@ -473,7 +550,7 @@ export default function StandardComparePage() {
             返回首页
           </button>
           <div className="text-sm text-slate-500">
-            已上传 {files.length} / 20 个文件
+            已上传 {files.length} 个文件
           </div>
         </div>
 
@@ -507,7 +584,7 @@ export default function StandardComparePage() {
             </svg>
             <div>
               <p className="text-lg font-semibold text-slate-700">批量上传政策文件</p>
-              <p className="text-sm text-slate-500 mt-1">支持最多20个文件，支持拖拽上传</p>
+              <p className="text-sm text-slate-500 mt-1">单次最多选择20个文件，支持拖拽上传</p>
             </div>
             <button
               onClick={() => fileInputRef.current?.click()}
