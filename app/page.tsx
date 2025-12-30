@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { Header } from "@/components/header";
 import { FileUpload } from "@/components/file-upload";
 import { Toolbar } from "@/components/toolbar";
@@ -98,6 +99,19 @@ export default function Home() {
     <FileProvider>
       <Header username={username} onLogout={handleLogout} />
       <main className="mx-auto max-w-[1400px] px-4 py-6 space-y-4">
+        {/* 页面入口按钮 */}
+        <div className="flex items-center justify-end gap-3 mb-4">
+          <Link
+            href="/standard-compare"
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-3 text-sm font-semibold text-white hover:from-blue-700 hover:to-blue-800 transition-all shadow-md hover:shadow-lg"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            政策标准对比
+          </Link>
+        </div>
+
         {/* File Upload Areas */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <FileUpload type="lastYear" />
