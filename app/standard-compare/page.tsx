@@ -529,6 +529,22 @@ export default function StandardComparePage() {
         handleFileSelect(e.dataTransfer.files);
     };
 
+    // 标准项规则说明映射
+    const standardRules: Record<string, string> = {
+        "业务目标拆解": "1、判断每个公司，是否都有季度或者月度任务分配？\n2、判断每个公司，季度任务占比跟集团的标准线的差异，（标准是：一季度：17%、二季度：24%、三季度：27%、四季度：32%），如果某个季度不一样，判断与标准值的对比高低；\n3、得出结论：哪个季度对标标准高？哪个季度低？如果任务占比后置，要有风险预警。",
+        "业务增长率目标": "1、判断对个人、团队以及整个公司2026年的目标，增长率是否高于10%？\n2、如果有不高于10%的情况，要抓取出相关信息，提示预警。",
+        "业务激励政策": "1、判断营销政策中，是否有对于拓新单、拓行业客户等等维度的激励性的措施？\n2、此条没有标准，就看是否有激励政策，用于激励增收。",
+        "是否有AM区域经理": "1、对于省会、直辖市、TOP15接发单城市（清单见相关sheet2），是否有区域经理、AM、项目经理此类职务及岗位的描述？\n2、如有，抓取出相关AM的核心信息，比如：岗位职责、目标、工作内容等；\n3、如没有，要有预警提示，如：未体现AM区域经理相关制度。",
+        "是否有大客户负责人": "1、是否有大客相关内容：比如大客开发、大客团队设置、大客负责人、大客绩效规则等等信息？\n2、如有，抓取相关信息展示即可；\n3、如没有，要有预警提示，如：未体现大客管理相关规则。",
+        "团单提成是否符合标准": "1、调取团单二维表，与sheet3中的上下限做对比；\n2、对应区间的提成系数如高于上限，需预警，并提示高于上限多少？并做罗列；\n3、对应区间的提成系数如低于下限，提示说明：提成系数低于集团标准下限，即可；\n4、对应区间的提成系数在区间中间，提示说明：提成系数符合集团要求，即可。",
+        "是否有新、老单提成细则": "1、政策中是否有关于新、老订单提成政策的细分？\n2、如有，抓取相关信息展示即可；\n3、如没有，要有预警提示，如：未体现新、老订单提成细分。",
+        "渠道（三方）订单提成": "1、如有三方的相关规则，判断三方订单的提成，是否低于直营团单？\n2、因为团单是二维表，一般提成在10%及以上，三方订单的提成要不高于团单，一般在3%左右，可以以3%作为判断标准；",
+        "个检提成": "1、判断是否有个检提成的要求？\n2、如有，抓取相关信息，并体现个检提成是多少？\n3、个检提成根据降本目标下调，但是每个公司目标不一致，无统一标准，列出城市公司的提成值即可",
+        "是否有创新提成": "1、判断是否有分院创新提成的要求？\n2、如有，抓取相关信息，并体现分院创新提成是多少？",
+        "是否有员工升降级要求": "1、判断是否有员工季度或者半年度升降级的相关要求？\n2、如有，抓取相关信息展示即可；\n3、如没有，要有预警提示，如：无员工升降级相关规则。",
+        "是否有管理者升降级要求": "1、判断是否有管理者半年度或者年度升降级的相关要求？\n2、如有，抓取相关信息展示即可；\n3、如没有，要有预警提示，如：无管理者升降级相关规则。",
+    };
+
     // 获取所有标准项名称（固定12个标准项）
     const getStandardNames = (): string[] => {
         return [
@@ -689,7 +705,15 @@ export default function StandardComparePage() {
                                             key={index}
                                             className="border border-slate-300 px-4 py-3 text-left font-semibold text-slate-900 min-w-[180px]"
                                         >
-                                            {name}
+                                            <div className="flex items-center gap-1">
+                                                <span>{name}</span>
+                                                <span
+                                                    className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-slate-200 text-slate-600 text-xs cursor-help"
+                                                    title={standardRules[name] || ""}
+                                                >
+                                                    ?
+                                                </span>
+                                            </div>
                                         </th>
                                     ))}
                                     <th className="border border-slate-300 px-4 py-3 text-left font-semibold text-slate-900 min-w-[120px]">
@@ -753,12 +777,15 @@ export default function StandardComparePage() {
                                              return (
                                                 <td 
                                                     key={index} 
-                                                    className="border border-slate-300 px-4 py-3"
+                                                    className={`border border-slate-300 px-4 py-3 ${
+                                                        result 
+                                                            ? 'cursor-pointer hover:bg-blue-50 hover:border-blue-300 transition-all duration-200' 
+                                                            : ''
+                                                    }`}
                                                     onClick={() => result && handleCellClick(file, standardName, result)}
-                                                    style={{ cursor: result ? 'pointer' : 'default' }}
                                                 >
                                                     {result ? (
-                                                        <div className="space-y-2 min-w-[200px] hover:bg-slate-50 -m-4 p-4 rounded transition-colors">
+                                                        <div className="space-y-2 min-w-[200px]">
                                                             <div className="flex items-center gap-2 flex-wrap">
                                   <span
                                       className={`px-2 py-1 rounded text-xs font-medium whitespace-nowrap ${
@@ -787,8 +814,7 @@ export default function StandardComparePage() {
                                                             </div>
                                                             {result.evidence && (
                                                                 <div className="group relative">
-                                                                    <div
-                                                                        className="text-xs text-slate-600 line-clamp-2 cursor-help">
+                                                                    <div className="text-xs text-slate-600 line-clamp-2">
                                                                         <span className="font-medium">依据：</span>
                                                                         {result.evidence}
                                                                     </div>
@@ -802,8 +828,7 @@ export default function StandardComparePage() {
                                                             )}
                                                             {result.analysis && (
                                                                 <div className="group relative">
-                                                                    <div
-                                                                        className="text-xs text-slate-500 line-clamp-2 cursor-help">
+                                                                    <div className="text-xs text-slate-500 line-clamp-2">
                                                                         <span className="font-medium">分析：</span>
                                                                         {result.analysis}
                                                                     </div>
@@ -892,6 +917,18 @@ export default function StandardComparePage() {
 
                             {/* 内容 */}
                             <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                                {/* 规则说明 */}
+                                {standardRules[detailModal.standardName] && (
+                                    <div className="space-y-3">
+                                        <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">规则说明</h3>
+                                        <div className="bg-amber-50 rounded-lg p-4 border border-amber-200">
+                                            <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
+                                                {standardRules[detailModal.standardName]}
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* 状态信息 */}
                                 <div className="space-y-3">
                                     <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">状态信息</h3>
