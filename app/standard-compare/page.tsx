@@ -42,6 +42,17 @@ export default function StandardComparePage() {
     const [files, setFiles] = useState<FileInfo[]>([]);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isDragging, setIsDragging] = useState(false);
+    const [detailModal, setDetailModal] = useState<{
+        open: boolean;
+        file: FileInfo | null;
+        standardName: string;
+        result: StandardItem | null;
+    }>({
+        open: false,
+        file: null,
+        standardName: "",
+        result: null,
+    });
 
     // 检查登录状态
     useEffect(() => {
@@ -518,19 +529,14 @@ export default function StandardComparePage() {
         handleFileSelect(e.dataTransfer.files);
     };
 
-    // 获取所有标准项名称（从第一个成功的结果中提取）
+    // 获取所有标准项名称（固定12个标准项）
     const getStandardNames = (): string[] => {
-        const firstResult = files.find((f) => f.compareResult && f.compareResult.length > 0);
-        if (firstResult && firstResult.compareResult) {
-            return firstResult.compareResult.map((item) => item.name);
-        }
-        // 如果没有结果，返回默认的11个标准项名称（根据用户提供的示例）
         return [
             "业务目标拆解",
             "业务增长率目标",
             "业务激励政策",
             "是否有AM区域经理",
-            "系是否有大客户负责人",
+            "是否有大客户负责人",
             "团单提成是否符合标准",
             "是否有新、老单提成细则",
             "渠道（三方）订单提成",
@@ -539,6 +545,26 @@ export default function StandardComparePage() {
             "是否有员工升降级要求",
             "是否有管理者升降级要求",
         ];
+    };
+
+    // 打开详情对话框
+    const handleCellClick = (file: FileInfo, standardName: string, result: StandardItem | null) => {
+        setDetailModal({
+            open: true,
+            file,
+            standardName,
+            result,
+        });
+    };
+
+    // 关闭详情对话框
+    const handleCloseModal = () => {
+        setDetailModal({
+            open: false,
+            file: null,
+            standardName: "",
+            result: null,
+        });
     };
 
     if (isChecking) {
@@ -566,6 +592,23 @@ export default function StandardComparePage() {
     }
 
     const standardNames = getStandardNames();
+
+    // 生成显示的文件列表（如果有文件就用文件，没有就生成10行空白数据）
+    const displayFiles: FileInfo[] = files.length > 0
+        ? files
+        : Array.from({ length: 10 }, (_, index) => ({
+            id: `placeholder-${index}`,
+            name: "",
+            size: 0,
+            sizeFormatted: "",
+            file_url: "",
+            city: "",
+            uploadStatus: "idle" as const,
+            compareStatus: "idle" as const,
+            compareResult: null,
+            uploadProgress: 0,
+            compareProgress: "",
+        }));
 
     return (
         <>
@@ -630,10 +673,9 @@ export default function StandardComparePage() {
                 </div>
 
                 {/* 对比结果表格 */}
-                {files.length > 0 && (
-                    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-                        <div className="overflow-x-auto">
-                            <table className="w-full border-collapse">
+                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="w-full border-collapse">
                                 <thead className="bg-slate-100">
                                 <tr>
                                     <th className="border border-slate-300 px-4 py-3 text-left font-semibold text-blue-900 w-[400px] bg-blue-200 whitespace-nowrap sticky left-0 z-20 shadow-[2px_0_4px_rgba(0,0,0,0.1)]">
@@ -656,16 +698,18 @@ export default function StandardComparePage() {
                                 </tr>
                                 </thead>
                                 <tbody>
-                                {files.map((file) => (
+                                {displayFiles.map((file) => (
                                     <tr key={file.id} className="border-b border-slate-200 hover:bg-slate-50">
                                         <td className="border border-slate-300 px-4 py-3 w-[400px] bg-blue-50 sticky left-0 z-20 shadow-[2px_0_4px_rgba(0,0,0,0.1)]">
-                                            <div
-                                                className="font-medium text-sm text-blue-900 whitespace-nowrap">{file.city}</div>
+                                            <div className="font-medium text-sm text-blue-900 whitespace-nowrap">
+                                                {file.city || <span className="text-slate-400">-</span>}
+                                            </div>
                                         </td>
                                         <td className="border border-slate-300 px-4 py-3 bg-white">
-                                            <div className="flex flex-col gap-1">
-                                                <div className="font-medium text-sm text-slate-700">{file.name}</div>
-                                                <div className="text-xs text-slate-500">{file.sizeFormatted}</div>
+                                            {file.name ? (
+                                                <div className="flex flex-col gap-1">
+                                                    <div className="font-medium text-sm text-slate-700">{file.name}</div>
+                                                    <div className="text-xs text-slate-500">{file.sizeFormatted}</div>
                                                 {/* 上传状态 */}
                                                 {file.uploadStatus === "uploading" && (
                                                     <div className="flex items-center gap-2 text-xs text-blue-600">
@@ -695,17 +739,26 @@ export default function StandardComparePage() {
                                                         {file.compareProgress || "对比中..."}
                                                     </div>
                                                 )}
-                                                {file.compareStatus === "error" && (
-                                                    <div className="text-xs text-red-600">{file.error}</div>
-                                                )}
-                                            </div>
+                                                 {file.compareStatus === "error" && (
+                                                     <div className="text-xs text-red-600">{file.error}</div>
+                                                 )}
+                                             </div>
+                                            ) : (
+                                                <div className="text-sm text-slate-400">-</div>
+                                            )}
                                         </td>
-                                        {standardNames.map((standardName, index) => {
-                                            const result = file.compareResult?.find((item) => item.name === standardName);
-                                            return (
-                                                <td key={index} className="border border-slate-300 px-4 py-3">
+                                         {standardNames.map((standardName, index) => {
+                                             // 直接按索引获取对应的结果数据
+                                             const result = file.compareResult && file.compareResult[index] ? file.compareResult[index] : null;
+                                             return (
+                                                <td 
+                                                    key={index} 
+                                                    className="border border-slate-300 px-4 py-3"
+                                                    onClick={() => result && handleCellClick(file, standardName, result)}
+                                                    style={{ cursor: result ? 'pointer' : 'default' }}
+                                                >
                                                     {result ? (
-                                                        <div className="space-y-2 min-w-[200px]">
+                                                        <div className="space-y-2 min-w-[200px] hover:bg-slate-50 -m-4 p-4 rounded transition-colors">
                                                             <div className="flex items-center gap-2 flex-wrap">
                                   <span
                                       className={`px-2 py-1 rounded text-xs font-medium whitespace-nowrap ${
@@ -780,28 +833,133 @@ export default function StandardComparePage() {
                                             );
                                         })}
                                         <td className="border border-slate-300 px-4 py-3">
-                                            <div className="flex flex-col gap-2">
-                                                {file.file_url && (
+                                            {file.name ? (
+                                                <div className="flex flex-col gap-2">
+                                                    {file.file_url && (
+                                                        <button
+                                                            onClick={() => handleRecompare(file.id)}
+                                                            disabled={file.compareStatus === "comparing"}
+                                                            className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                        >
+                                                            {file.compareStatus === "comparing" ? "对比中..." : "再次对比"}
+                                                        </button>
+                                                    )}
                                                     <button
-                                                        onClick={() => handleRecompare(file.id)}
-                                                        disabled={file.compareStatus === "comparing"}
-                                                        className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                        onClick={() => handleDelete(file.id)}
+                                                        className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs text-red-600 hover:bg-red-100 transition-colors"
                                                     >
-                                                        {file.compareStatus === "comparing" ? "对比中..." : "再次对比"}
+                                                        删除
                                                     </button>
-                                                )}
-                                                <button
-                                                    onClick={() => handleDelete(file.id)}
-                                                    className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs text-red-600 hover:bg-red-100 transition-colors"
-                                                >
-                                                    删除
-                                                </button>
-                                            </div>
+                                                </div>
+                                            ) : (
+                                                <div className="text-xs text-slate-400">-</div>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+
+                {/* 详情对话框 */}
+                {detailModal.open && detailModal.result && (
+                    <div
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+                        onClick={handleCloseModal}
+                    >
+                        <div
+                            className="relative w-full max-w-3xl max-h-[90vh] bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {/* 头部 */}
+                            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
+                                <div>
+                                    <h2 className="text-lg font-semibold text-slate-900">{detailModal.standardName}</h2>
+                                    {detailModal.file && (
+                                        <p className="text-sm text-slate-500 mt-1">{detailModal.file.name}</p>
+                                    )}
+                                </div>
+                                <button
+                                    onClick={handleCloseModal}
+                                    className="text-slate-400 hover:text-slate-600 transition-colors"
+                                >
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            {/* 内容 */}
+                            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                                {/* 状态信息 */}
+                                <div className="space-y-3">
+                                    <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">状态信息</h3>
+                                    <div className="flex items-center gap-4">
+                                        <div>
+                                            <span className="text-xs text-slate-500">状态：</span>
+                                            <span
+                                                className={`ml-2 px-3 py-1 rounded text-sm font-medium ${
+                                                    detailModal.result.status === "满足"
+                                                        ? "bg-green-100 text-green-700"
+                                                        : detailModal.result.status === "部分满足"
+                                                        ? "bg-yellow-100 text-yellow-700"
+                                                        : detailModal.result.status === "不满足"
+                                                        ? "bg-red-100 text-red-700"
+                                                        : detailModal.result.status === "未提及"
+                                                        ? "bg-gray-100 text-gray-700"
+                                                        : "bg-slate-100 text-slate-700"
+                                                }`}
+                                            >
+                                                {detailModal.result.status}
+                                            </span>
+                                        </div>
+                                        {detailModal.result.matched !== null && (
+                                            <div>
+                                                <span className="text-xs text-slate-500">匹配：</span>
+                                                <span
+                                                    className={`ml-2 px-3 py-1 rounded text-sm font-medium ${
+                                                        detailModal.result.matched ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"
+                                                    }`}
+                                                >
+                                                    {detailModal.result.matched ? "✓ 匹配" : "✗ 不匹配"}
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* 依据 */}
+                                {detailModal.result.evidence && (
+                                    <div className="space-y-3">
+                                        <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">依据</h3>
+                                        <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                                            <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
+                                                {detailModal.result.evidence}
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 分析 */}
+                                {detailModal.result.analysis && (
+                                    <div className="space-y-3">
+                                        <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">分析</h3>
+                                        <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                                            <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
+                                                {detailModal.result.analysis}
+                                            </p>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 如果没有依据和分析，显示提示 */}
+                                {!detailModal.result.evidence && !detailModal.result.analysis && (
+                                    <div className="text-center py-8 text-slate-400">
+                                        <p className="text-sm">暂无详细信息</p>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 )}
