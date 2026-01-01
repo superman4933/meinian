@@ -7,6 +7,8 @@ import {Login} from "@/components/login";
 import {formatFileSize, matchCityFromFileName} from "@/lib/city-matcher";
 import {getCozeTokenClient} from "@/lib/coze-config";
 import {showToast} from "@/lib/toast";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 // 标准项接口定义
 interface StandardItem {
@@ -971,9 +973,54 @@ export default function StandardComparePage() {
                                     <div className="space-y-3">
                                         <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">依据</h3>
                                         <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-                                            <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
-                                                {detailModal.result.evidence}
-                                            </p>
+                                            <div className="prose prose-sm max-w-none text-slate-700">
+                                                <ReactMarkdown
+                                                    remarkPlugins={[remarkGfm]}
+                                                    components={{
+                                                        h1: ({ node, ...props }) => <h1 className="text-xl font-bold mt-4 mb-2" {...props} />,
+                                                        h2: ({ node, ...props }) => <h2 className="text-lg font-semibold mt-3 mb-2" {...props} />,
+                                                        h3: ({ node, ...props }) => <h3 className="text-base font-semibold mt-2 mb-1" {...props} />,
+                                                        h4: ({ node, ...props }) => <h4 className="text-sm font-semibold mt-2 mb-1" {...props} />,
+                                                        p: ({ node, ...props }) => <p className="mb-2 leading-relaxed" {...props} />,
+                                                        ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2 space-y-1" {...props} />,
+                                                        ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2 space-y-1" {...props} />,
+                                                        li: ({ node, ...props }) => <li className="ml-4" {...props} />,
+                                                        strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
+                                                        em: ({ node, ...props }) => <em className="italic" {...props} />,
+                                                        code: ({ node, ...props }) => (
+                                                            <code className="bg-slate-100 px-1 py-0.5 rounded text-xs font-mono" {...props} />
+                                                        ),
+                                                        pre: ({ node, ...props }) => (
+                                                            <pre className="bg-slate-100 p-3 rounded overflow-x-auto mb-2" {...props} />
+                                                        ),
+                                                        blockquote: ({ node, ...props }) => (
+                                                            <blockquote className="border-l-4 border-slate-300 pl-4 italic my-2" {...props} />
+                                                        ),
+                                                        table: ({ node, ...props }) => (
+                                                            <div className="overflow-x-auto my-4">
+                                                                <table className="min-w-full border-collapse border border-slate-300 text-sm" {...props} />
+                                                            </div>
+                                                        ),
+                                                        thead: ({ node, ...props }) => (
+                                                            <thead className="bg-slate-100" {...props} />
+                                                        ),
+                                                        tbody: ({ node, ...props }) => (
+                                                            <tbody {...props} />
+                                                        ),
+                                                        tr: ({ node, ...props }) => (
+                                                            <tr className="border-b border-slate-200 hover:bg-slate-50" {...props} />
+                                                        ),
+                                                        th: ({ node, ...props }) => (
+                                                            <th className="border border-slate-300 px-4 py-2 text-left font-semibold text-slate-900" {...props} />
+                                                        ),
+                                                        td: ({ node, ...props }) => (
+                                                            <td className="border border-slate-300 px-4 py-2 text-slate-700" {...props} />
+                                                        ),
+                                                    }}
+                                                >
+                                                    {detailModal.result.evidence}
+                                                </ReactMarkdown>
+                                            </div>
                                         </div>
                                     </div>
                                 )}
@@ -983,9 +1030,54 @@ export default function StandardComparePage() {
                                     <div className="space-y-3">
                                         <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">分析</h3>
                                         <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                                            <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">
-                                                {detailModal.result.analysis}
-                                            </p>
+                                            <div className="prose prose-sm max-w-none text-slate-700">
+                                                <ReactMarkdown
+                                                    remarkPlugins={[remarkGfm]}
+                                                    components={{
+                                                        h1: ({ node, ...props }) => <h1 className="text-xl font-bold mt-4 mb-2" {...props} />,
+                                                        h2: ({ node, ...props }) => <h2 className="text-lg font-semibold mt-3 mb-2" {...props} />,
+                                                        h3: ({ node, ...props }) => <h3 className="text-base font-semibold mt-2 mb-1" {...props} />,
+                                                        h4: ({ node, ...props }) => <h4 className="text-sm font-semibold mt-2 mb-1" {...props} />,
+                                                        p: ({ node, ...props }) => <p className="mb-2 leading-relaxed" {...props} />,
+                                                        ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2 space-y-1" {...props} />,
+                                                        ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2 space-y-1" {...props} />,
+                                                        li: ({ node, ...props }) => <li className="ml-4" {...props} />,
+                                                        strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
+                                                        em: ({ node, ...props }) => <em className="italic" {...props} />,
+                                                        code: ({ node, ...props }) => (
+                                                            <code className="bg-slate-100 px-1 py-0.5 rounded text-xs font-mono" {...props} />
+                                                        ),
+                                                        pre: ({ node, ...props }) => (
+                                                            <pre className="bg-slate-100 p-3 rounded overflow-x-auto mb-2" {...props} />
+                                                        ),
+                                                        blockquote: ({ node, ...props }) => (
+                                                            <blockquote className="border-l-4 border-slate-300 pl-4 italic my-2" {...props} />
+                                                        ),
+                                                        table: ({ node, ...props }) => (
+                                                            <div className="overflow-x-auto my-4">
+                                                                <table className="min-w-full border-collapse border border-slate-300 text-sm" {...props} />
+                                                            </div>
+                                                        ),
+                                                        thead: ({ node, ...props }) => (
+                                                            <thead className="bg-slate-100" {...props} />
+                                                        ),
+                                                        tbody: ({ node, ...props }) => (
+                                                            <tbody {...props} />
+                                                        ),
+                                                        tr: ({ node, ...props }) => (
+                                                            <tr className="border-b border-slate-200 hover:bg-slate-50" {...props} />
+                                                        ),
+                                                        th: ({ node, ...props }) => (
+                                                            <th className="border border-slate-300 px-4 py-2 text-left font-semibold text-slate-900" {...props} />
+                                                        ),
+                                                        td: ({ node, ...props }) => (
+                                                            <td className="border border-slate-300 px-4 py-2 text-slate-700" {...props} />
+                                                        ),
+                                                    }}
+                                                >
+                                                    {detailModal.result.analysis}
+                                                </ReactMarkdown>
+                                            </div>
                                         </div>
                                     </div>
                                 )}
