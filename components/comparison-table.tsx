@@ -4,7 +4,7 @@ import { useState, Fragment, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useFileContext, ComparisonRow, ComparisonStructuredData, FileInfo } from "@/contexts/file-context";
 import { formatFileSize } from "@/lib/city-matcher";
-import { getCozeTokenClient, getPolicyPrompt } from "@/lib/coze-config";
+import { getCozeTokenClient } from "@/lib/coze-config";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -968,6 +968,14 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       return;
     }
 
+    const oldFileName = row.lastYearFile.name || "";
+    const newFileName = row.thisYearFile.name || "";
+
+    if (!oldFileName || !newFileName) {
+      showToast("文件名称信息缺失", "error");
+      return;
+    }
+
     updateComparison(row.id, { comparisonStatus: "comparing" });
 
     try {
@@ -983,7 +991,8 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         body: JSON.stringify({
           file1_url: oldFileUrl,
           file2_url: newFileUrl,
-          prompt: getPolicyPrompt(),
+          oldFileName: oldFileName,
+          newFileName: newFileName,
         }),
       });
 

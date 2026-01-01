@@ -103,14 +103,16 @@ async function callCozeWorkflow(
   cozeToken: string,
   file1_url: string,
   file2_url: string,
-  prompt: string
+  oldFileName: string,
+  newFileName: string
 ): Promise<{ response: Response; data: any }> {
   const requestBody = {
     workflow_id: WORKFLOW_ID,
     parameters: {
       oldFile: file1_url,
       newFile: file2_url,
-      prompt: prompt || "请分析这两个文件的内容差异",
+      oldFileName: oldFileName,
+      newFileName: newFileName,
     },
   };
 
@@ -118,7 +120,8 @@ async function callCozeWorkflow(
     console.log(`调用扣子工作流API - 第 ${attempt}/${MAX_RETRIES} 次尝试:`, {
       file1_url,
       file2_url,
-      prompt,
+      oldFileName,
+      newFileName,
       requestBody: JSON.stringify(requestBody, null, 2),
     });
 
@@ -225,11 +228,18 @@ async function callCozeWorkflow(
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { file1_url, file2_url, prompt } = body;
+    const { file1_url, file2_url, oldFileName, newFileName } = body;
 
     if (!file1_url || !file2_url) {
       return NextResponse.json(
         { success: false, message: "缺少文件URL" },
+        { status: 400 }
+      );
+    }
+
+    if (!oldFileName || !newFileName) {
+      return NextResponse.json(
+        { success: false, message: "缺少文件名参数" },
         { status: 400 }
       );
     }
@@ -257,7 +267,8 @@ export async function POST(request: NextRequest) {
       cozeToken,
       file1_url,
       file2_url,
-      prompt
+      oldFileName,
+      newFileName
     );
 
     // 记录扣子API的原始返回数据

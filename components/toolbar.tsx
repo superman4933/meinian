@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useFileContext } from "@/contexts/file-context";
-import { getCozeTokenClient, getPolicyPrompt } from "@/lib/coze-config";
+import { getCozeTokenClient } from "@/lib/coze-config";
 
 interface ToolbarProps {
   onFilterChange?: (filter: string) => void;
@@ -69,6 +69,12 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
           
           const oldFileUrl = row.lastYearFile!.file_url || row.lastYearFile!.url;
           const newFileUrl = row.thisYearFile!.file_url || row.thisYearFile!.url;
+          const oldFileName = row.lastYearFile!.name || "";
+          const newFileName = row.thisYearFile!.name || "";
+
+          if (!oldFileName || !newFileName) {
+            throw new Error("文件名称信息缺失");
+          }
 
           const response = await fetch("/api/compare", {
             method: "POST",
@@ -79,9 +85,8 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
             body: JSON.stringify({
               file1_url: oldFileUrl,
               file2_url: newFileUrl,
-              prompt: type === "policy" 
-                ? getPolicyPrompt()
-                : "请分析这两个佣金文件的差异",
+              oldFileName: oldFileName,
+              newFileName: newFileName,
             }),
           });
 

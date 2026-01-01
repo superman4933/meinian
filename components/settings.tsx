@@ -1,21 +1,18 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getCozeToken, saveCozeToken, clearCozeToken, getPolicyPrompt, savePolicyPrompt, clearPolicyPrompt } from "@/lib/coze-config";
+import { getCozeToken, saveCozeToken, clearCozeToken } from "@/lib/coze-config";
 
 export function Settings() {
   const [token, setToken] = useState("");
-  const [policyPrompt, setPolicyPrompt] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [showToken, setShowToken] = useState(false);
 
   useEffect(() => {
-    // 加载已保存的token和提示词
+    // 加载已保存的token
     const savedToken = getCozeToken();
-    const savedPrompt = getPolicyPrompt();
     setToken(savedToken);
-    setPolicyPrompt(savedPrompt);
   }, []);
 
   const handleSave = () => {
@@ -24,17 +21,11 @@ export function Settings() {
       return;
     }
 
-    if (!policyPrompt.trim()) {
-      setMessage({ type: "error", text: "政策对比提示词不能为空" });
-      return;
-    }
-
     setIsLoading(true);
     setMessage(null);
 
     try {
       saveCozeToken(token.trim());
-      savePolicyPrompt(policyPrompt.trim());
       setMessage({ type: "success", text: "配置已保存" });
       
       // 3秒后清除提示
@@ -51,13 +42,9 @@ export function Settings() {
   const handleReset = () => {
     if (confirm("确定要重置为默认配置吗？")) {
       clearCozeToken();
-      clearPolicyPrompt();
       const defaultToken = "sat_iVFZ9QcGxPajVuiZD6o89MGOZ9hiQL2rTGMIzUAxGy9rBvwegpaZDEqzeyoGY4Ic";
-      const defaultPrompt = "请分析这两个政策文件的差异";
       setToken(defaultToken);
-      setPolicyPrompt(defaultPrompt);
       saveCozeToken(defaultToken);
-      savePolicyPrompt(defaultPrompt);
       setMessage({ type: "success", text: "已重置为默认配置" });
       setTimeout(() => {
         setMessage(null);
@@ -145,31 +132,12 @@ export function Settings() {
           </button>
         </div>
 
-        <div>
-          <label htmlFor="policy-prompt" className="block text-sm font-medium text-slate-700 mb-2">
-            政策对比提示词
-          </label>
-          <textarea
-            id="policy-prompt"
-            value={policyPrompt}
-            onChange={(e) => setPolicyPrompt(e.target.value)}
-            rows={4}
-            className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 focus:bg-white transition-all text-slate-900 text-sm resize-none"
-            placeholder="请输入政策对比的提示词，用于指导AI进行文件对比分析"
-            disabled={isLoading}
-          />
-          <p className="mt-2 text-xs text-slate-500">
-            提示词将用于政策文件对比，指导AI分析文件的差异和变化
-          </p>
-        </div>
-
         <div className="rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 text-xs text-slate-600">
           <p className="font-medium mb-1">提示：</p>
           <ul className="list-disc list-inside space-y-1">
-            <li>Token和提示词将保存在浏览器本地存储中</li>
+            <li>Token将保存在浏览器本地存储中</li>
             <li>更换浏览器或清除数据后需要重新设置</li>
             <li>Token用于调用扣子API的文件上传和对比功能</li>
-            <li>提示词用于指导AI进行文件对比分析</li>
           </ul>
         </div>
       </div>
