@@ -619,7 +619,7 @@ export default function StandardComparePage() {
             sizeFormatted: "",
             file_url: "",
             city: "",
-            uploadStatus: "idle" as const,
+            uploadStatus: "success" as const,
             compareStatus: "idle" as const,
             compareResult: null,
             uploadProgress: 0,
