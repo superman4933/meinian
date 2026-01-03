@@ -787,60 +787,30 @@ export default function StandardComparePage() {
                                                     onClick={() => result && handleCellClick(file, standardName, result)}
                                                 >
                                                     {result ? (
-                                                        <div className="space-y-2 min-w-[200px]">
-                                                            <div className="flex items-center gap-2 flex-wrap">
-                                  <span
-                                      className={`px-2 py-1 rounded text-xs font-medium whitespace-nowrap ${
-                                          result.status === "满足"
-                                              ? "bg-green-100 text-green-700"
-                                              : result.status === "部分满足"
-                                                  ? "bg-yellow-100 text-yellow-700"
-                                                  : result.status === "不满足"
-                                                      ? "bg-red-100 text-red-700"
-                                                      : result.status === "未提及"
-                                                          ? "bg-gray-100 text-gray-700"
-                                                          : "bg-slate-100 text-slate-700"
-                                      }`}
-                                  >
-                                    {result.status}
-                                  </span>
-                                                                {result.matched !== null && (
-                                                                    <span
-                                                                        className={`px-2 py-1 rounded text-xs whitespace-nowrap ${
-                                                                            result.matched ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"
-                                                                        }`}
-                                                                    >
-                                      {result.matched ? "✓ 匹配" : "✗ 不匹配"}
-                                    </span>
-                                                                )}
-                                                            </div>
-                                                            {result.evidence && (
-                                                                <div className="group relative">
-                                                                    <div className="text-xs text-slate-600 line-clamp-2">
-                                                                        <span className="font-medium">依据：</span>
-                                                                        {result.evidence}
-                                                                    </div>
-                                                                    {result.evidence.length > 50 && (
-                                                                        <div
-                                                                            className="absolute left-0 top-full mt-1 hidden group-hover:block z-20 bg-slate-900 text-white text-xs rounded-lg px-3 py-2 max-w-xs shadow-xl">
-                                                                            {result.evidence}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-                                                            )}
-                                                            {result.analysis && (
-                                                                <div className="group relative">
-                                                                    <div className="text-xs text-slate-500 line-clamp-2">
-                                                                        <span className="font-medium">分析：</span>
-                                                                        {result.analysis}
-                                                                    </div>
-                                                                    {result.analysis.length > 50 && (
-                                                                        <div
-                                                                            className="absolute left-0 top-full mt-1 hidden group-hover:block z-20 bg-slate-900 text-white text-xs rounded-lg px-3 py-2 max-w-xs shadow-xl">
-                                                                            {result.analysis}
-                                                                        </div>
-                                                                    )}
-                                                                </div>
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span
+                                                                className={`px-2 py-1 rounded text-xs font-medium whitespace-nowrap ${
+                                                                    result.status === "满足"
+                                                                        ? "bg-green-100 text-green-700"
+                                                                        : result.status === "部分满足"
+                                                                        ? "bg-yellow-100 text-yellow-700"
+                                                                        : result.status === "不满足"
+                                                                        ? "bg-red-100 text-red-700"
+                                                                        : result.status === "未提及"
+                                                                        ? "bg-gray-100 text-gray-700"
+                                                                        : "bg-slate-100 text-slate-700"
+                                                                }`}
+                                                            >
+                                                                {result.status}
+                                                            </span>
+                                                            {result.matched !== null && (
+                                                                <span
+                                                                    className={`px-2 py-1 rounded text-xs whitespace-nowrap ${
+                                                                        result.matched ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"
+                                                                    }`}
+                                                                >
+                                                                    {result.matched ? "✓ 匹配" : "✗ 不匹配"}
+                                                                </span>
                                                             )}
                                                         </div>
                                                     ) : file.compareStatus === "comparing" ? (
@@ -1025,10 +995,10 @@ export default function StandardComparePage() {
                                     </div>
                                 )}
 
-                                {/* 分析 */}
+                                {/* 结论 */}
                                 {detailModal.result.analysis && (
                                     <div className="space-y-3">
-                                        <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">分析</h3>
+                                        <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">结论</h3>
                                         <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
                                             <div className="prose prose-sm max-w-none text-slate-700">
                                                 <ReactMarkdown
@@ -1082,7 +1052,7 @@ export default function StandardComparePage() {
                                     </div>
                                 )}
 
-                                {/* 如果没有依据和分析，显示提示 */}
+                                {/* 如果没有依据和结论，显示提示 */}
                                 {!detailModal.result.evidence && !detailModal.result.analysis && (
                                     <div className="text-center py-8 text-slate-400">
                                         <p className="text-sm">暂无详细信息</p>
