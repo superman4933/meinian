@@ -1,5 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCozeToken } from "@/lib/coze-config";
+import tcb from "@cloudbase/node-sdk";
+
+// 腾讯云开发环境ID
+const ENV_ID = process.env.TCB_ENV_ID || "pet-8g5ohyrp269f409e-9bua741dcc7";
+const COLLECTION_NAME = "standard_compare_records";
+
+// 初始化腾讯云SDK（单例模式，复用连接）
+let dbInstance: ReturnType<typeof tcb.init> | null = null;
+let databaseInstance: ReturnType<ReturnType<typeof tcb.init>["database"]> | null = null;
+
+function getDatabase() {
+  if (!dbInstance) {
+    dbInstance = tcb.init({
+      env: ENV_ID,
+      secretId: process.env.TCB_SECRET_ID || "AKIDL0WqwqX3OWRBjFaifPxISP9fx5zgBVbY",
+      secretKey: process.env.TCB_SECRET_KEY || "oSwDG6lDUaVFm7GxVqxrX0ING0Zv4zhB",
+    });
+    databaseInstance = dbInstance.database();
+  }
+  return databaseInstance!;
+}
 
 const WORKFLOW_ID = "7589638340099620891";
 const MAX_RETRIES = 5; // 最大重试次数
@@ -180,7 +201,7 @@ async function callCozeWorkflow(
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { file_url } = body;
+    const { file_url, city, fileName, mode, recordId } = body;
 
     if (!file_url || typeof file_url !== 'string') {
       return NextResponse.json(
@@ -219,7 +240,13 @@ export async function POST(request: NextRequest) {
 
     console.log("标准对比API调用参数:", {
       file_url,
+      city,
+      fileName,
+      mode,
+      recordId,
       workflow_id: WORKFLOW_ID,
+      hasCity: !!city,
+      hasFileName: !!fileName,
     });
 
     const { response, data } = await callCozeWorkflow(
@@ -289,7 +316,137 @@ export async function POST(request: NextRequest) {
       execute_id: data.execute_id,
       debug_url: data.debug_url,
       raw_data: data.data,
+      rawCozeResponse: data, // 保存完整的原始Coze API返回数据
     };
+
+    // 如果提供了 city 和 fileName，保存到数据库
+    console.log("准备保存到数据库 - 参数检查:", {
+      hasCity: !!city,
+      city: city || "(空)",
+      hasFileName: !!fileName,
+      fileName: fileName || "(空)",
+      hasFileUrl: !!file_url,
+      file_url: file_url || "(空)",
+      mode,
+      recordId,
+      willSave: !!(city && fileName && file_url),
+    });
+
+    if (city && fileName && file_url) {
+      console.log("开始保存到数据库...");
+      try {
+        const db = getDatabase();
+        console.log("数据库连接成功");
+        
+        const getBeijingTime = () => {
+          const now = new Date();
+          const beijingTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // UTC+8
+          return beijingTime.toISOString();
+        };
+
+        if (mode === "overwrite" && recordId) {
+          // 覆盖模式：更新现有记录
+          console.log("覆盖模式 - 更新记录:", { recordId });
+          const updateData: any = {
+            city,
+            fileName,
+            fileUrl: file_url,
+            standardItems: structuredData ? JSON.stringify(structuredData) : null,
+            rawCozeResponse: JSON.stringify(data),
+            add_time: getBeijingTime(),
+            isVerified: false, // 重置审核状态
+            updateTime: new Date().toISOString(),
+          };
+
+          console.log("更新数据:", {
+            _id: recordId,
+            city,
+            fileName,
+            fileUrl: file_url,
+            hasStandardItems: !!structuredData,
+            standardItemsLength: Array.isArray(structuredData) ? structuredData.length : 0,
+          });
+
+          const updateResult = await db.collection(COLLECTION_NAME).doc(recordId).update(updateData);
+          
+          console.log("更新结果:", updateResult);
+          
+          if (typeof updateResult.code === 'string') {
+            console.error("❌ 更新记录失败:", {
+              code: updateResult.code,
+              message: updateResult.message,
+              result: updateResult,
+            });
+          } else {
+            console.log("✅ 数据库更新成功:", { 
+              _id: recordId,
+              updated: updateResult.updated || 0,
+            });
+            result._id = recordId; // 返回记录ID
+          }
+        } else {
+          // 创建模式：新建记录
+          console.log("创建模式 - 新建记录");
+          const record: any = {
+            city,
+            fileName,
+            fileUrl: file_url,
+            standardItems: structuredData ? JSON.stringify(structuredData) : null,
+            status: "done",
+            rawCozeResponse: JSON.stringify(data),
+            add_time: getBeijingTime(),
+            isVerified: false,
+            createTime: new Date().toISOString(),
+            updateTime: new Date().toISOString(),
+          };
+
+          console.log("创建记录数据:", {
+            city,
+            fileName,
+            fileUrl: file_url,
+            hasStandardItems: !!structuredData,
+            standardItemsLength: Array.isArray(structuredData) ? structuredData.length : 0,
+            add_time: record.add_time,
+          });
+
+          const saveResult = await db.collection(COLLECTION_NAME).add(record);
+          
+          console.log("保存结果:", saveResult);
+          
+          if (typeof saveResult.code === 'string') {
+            console.error("❌ 创建记录失败:", {
+              code: saveResult.code,
+              message: saveResult.message,
+              result: saveResult,
+            });
+          } else {
+            const _id = saveResult.id || saveResult._id || saveResult.ids?.[0];
+            if (_id) {
+              console.log("✅ 数据库保存成功:", { 
+                _id,
+                collection: COLLECTION_NAME,
+              });
+              result._id = _id; // 返回记录ID
+            } else {
+              console.error("❌ 保存成功但未返回ID:", saveResult);
+            }
+          }
+        }
+      } catch (dbError: any) {
+        console.error("❌ 保存到数据库异常:", {
+          error: dbError.message,
+          stack: dbError.stack,
+          errorDetails: dbError,
+        });
+        // 数据库保存失败不影响API返回，只记录错误
+      }
+    } else {
+      console.warn("⚠️ 跳过数据库保存 - 缺少必要参数:", {
+        city: city || "(空)",
+        fileName: fileName || "(空)",
+        file_url: file_url || "(空)",
+      });
+    }
 
     console.log("标准对比API - 处理后的返回数据:", {
       success: result.success,
@@ -299,7 +456,8 @@ export async function POST(request: NextRequest) {
       structuredDataLength: Array.isArray(result.structured) ? result.structured.length : 0,
       executeId: result.execute_id,
       debugUrl: result.debug_url,
-      fullResult: JSON.stringify(result, null, 2),
+      savedToDB: !!(city && fileName && file_url),
+      recordId: (result as any)._id,
     });
 
     return NextResponse.json(result);

@@ -2,6 +2,7 @@
 
 import {useState, useEffect, useRef} from "react";
 import {useRouter} from "next/navigation";
+import {createPortal} from "react-dom";
 import {Header} from "@/components/header";
 import {Login} from "@/components/login";
 import {formatFileSize, matchCityFromFileName} from "@/lib/city-matcher";
@@ -34,6 +35,9 @@ interface FileInfo {
     error?: string;
     uploadProgress: number;
     compareProgress: string;
+    _id?: string; // 数据库记录ID，用于更新和删除记录
+    compareTime?: string; // 对比时间（ISO字符串格式，北京时间）
+    isVerified?: boolean; // 是否已人工审核确认
 }
 
 export default function StandardComparePage() {
@@ -55,6 +59,35 @@ export default function StandardComparePage() {
         standardName: "",
         result: null,
     });
+
+    // 历史记录相关状态
+    const [showHistory, setShowHistory] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [historyFiles, setHistoryFiles] = useState<FileInfo[]>([]);
+    const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+    const [filterStatus, setFilterStatus] = useState("全部状态");
+
+    // 覆盖/创建模式选择对话框
+    const [compareModeModal, setCompareModeModal] = useState<{
+        open: boolean;
+        file: FileInfo | null;
+    }>({
+        open: false,
+        file: null,
+    });
+
+    // 审核确认对话框
+    const [verifyModal, setVerifyModal] = useState<{
+        open: boolean;
+        file: FileInfo | null;
+    }>({
+        open: false,
+        file: null,
+    });
+
+    // 历史记录中正在对比的状态（用于覆盖模式）
+    const historyComparingStates = useRef<Map<string, { compareStatus: "comparing" | "success" | "error"; compareResult: StandardItem[] | null; error?: string }>>(new Map());
 
     // 检查登录状态
     useEffect(() => {
@@ -94,6 +127,82 @@ export default function StandardComparePage() {
 
         checkAutoLogin();
     }, []);
+
+    // 加载历史记录
+    const loadHistoryRecords = async (page: number = 1) => {
+        setIsLoadingHistory(true);
+        try {
+            const params = new URLSearchParams({
+                page: page.toString(),
+                pageSize: "100",
+            });
+            if (filterStatus === "已审核") {
+                params.append("isVerified", "true");
+            } else if (filterStatus === "未审核") {
+                params.append("isVerified", "false");
+            }
+
+            const response = await fetch(`/api/standard-compare-records?${params}`);
+            const data = await response.json();
+
+            if (data.success && data.data) {
+                // 解析数据库记录为 FileInfo 格式
+                const historyFilesData: FileInfo[] = data.data.map((record: any) => {
+                    let standardItems: StandardItem[] = [];
+                    try {
+                        if (record.standardItems) {
+                            standardItems = typeof record.standardItems === 'string' 
+                                ? JSON.parse(record.standardItems) 
+                                : record.standardItems;
+                        } else if (record.rawCozeResponse) {
+                            // 如果没有standardItems，尝试从rawCozeResponse解析
+                            const rawData = typeof record.rawCozeResponse === 'string' 
+                                ? JSON.parse(record.rawCozeResponse) 
+                                : record.rawCozeResponse;
+                            // 尝试提取structured数据
+                            if (rawData.structured && Array.isArray(rawData.structured)) {
+                                standardItems = rawData.structured;
+                            }
+                        }
+                    } catch (e) {
+                        console.error("解析标准项数据失败:", e);
+                    }
+
+                    return {
+                        id: record._id || `history-${record._id}`,
+                        name: record.fileName || "",
+                        size: 0,
+                        sizeFormatted: "",
+                        file_url: record.fileUrl || "",
+                        city: record.city || "",
+                        uploadStatus: "success" as const,
+                        compareStatus: historyComparingStates.current.get(record._id)?.compareStatus || ("success" as const),
+                        compareResult: historyComparingStates.current.get(record._id)?.compareResult || standardItems,
+                        compareProgress: "对比完成",
+                        _id: record._id,
+                        compareTime: record.add_time,
+                        isVerified: record.isVerified || false,
+                    };
+                });
+
+                setHistoryFiles(historyFilesData);
+                setTotalPages(data.pagination?.totalPages || 1);
+                setCurrentPage(page);
+            }
+        } catch (error) {
+            console.error("加载历史记录失败:", error);
+            showToast("加载历史记录失败", "error");
+        } finally {
+            setIsLoadingHistory(false);
+        }
+    };
+
+    useEffect(() => {
+        if (showHistory && isLoggedIn) {
+            loadHistoryRecords(currentPage);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showHistory, currentPage, filterStatus, isLoggedIn]);
 
     const handleLoginSuccess = (loggedInUsername: string) => {
         setUsername(loggedInUsername);
@@ -338,9 +447,14 @@ export default function StandardComparePage() {
                     )
                 );
 
-                // 上传成功后立即调用对比API（不等待，并行执行）
-                compareFile(fileId, data.file_url).catch((error) => {
-                    console.error(`文件 ${fileId} 对比失败:`, error);
+                // 上传成功后立即调用对比API
+                // 使用 requestAnimationFrame 确保状态更新完成后再调用
+                requestAnimationFrame(() => {
+                    setTimeout(() => {
+                        compareFile(fileId, data.file_url).catch((error) => {
+                            console.error(`文件 ${fileId} 对比失败:`, error);
+                        });
+                    }, 100);
                 });
 
                 return {success: true};
@@ -380,8 +494,120 @@ export default function StandardComparePage() {
         }
     };
 
+    // 获取北京时间（UTC+8）
+    const getBeijingTime = () => {
+        const now = new Date();
+        const beijingTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // UTC+8
+        return beijingTime.toISOString();
+    };
+
     // 调用对比API
-    const compareFile = async (fileId: string, file_url: string) => {
+    const compareFile = async (fileId: string, file_url: string, mode: "create" | "overwrite" = "create", recordId?: string) => {
+        // 辅助函数：获取最新的文件对象（解决闭包问题）
+        const getCurrentFile = (): FileInfo | undefined => {
+            // 使用函数式更新获取最新的 files 状态
+            let currentFile: FileInfo | undefined = undefined;
+            setFiles((currentFiles) => {
+                currentFile = currentFiles.find((f) => f.id === fileId);
+                return currentFiles; // 不修改状态，只是获取最新值
+            });
+            
+            // 如果找不到，从 historyFiles 中查找
+            if (!currentFile) {
+                setHistoryFiles((currentHistoryFiles) => {
+                    if (showHistory) {
+                        currentFile = currentHistoryFiles.find((f) => f.id === fileId);
+                    }
+                    return currentHistoryFiles; // 不修改状态，只是获取最新值
+                });
+            }
+            
+            return currentFile;
+        };
+        
+        // 必须从表格（files 或 historyFiles）中获取文件信息
+        // 使用辅助函数获取最新的文件对象（解决闭包问题）
+        let file = getCurrentFile();
+        
+        // 如果还是找不到，等待一下再试（状态可能还没更新）
+        if (!file) {
+            console.log("第一次查找未找到文件，等待状态更新...", {
+                fileId,
+            });
+            // 等待状态更新（最多等待1000ms，增加等待时间）
+            for (let i = 0; i < 10; i++) {
+                await new Promise((resolve) => setTimeout(resolve, 100));
+                file = getCurrentFile();
+                if (file) {
+                    console.log("在表格中找到文件:", { 
+                        fileId, 
+                        city: file.city, 
+                        name: file.name,
+                        attempt: i + 1,
+                    });
+                    break;
+                }
+            }
+        }
+        
+        // 如果仍然找不到文件，报错（必须从表格中获取）
+        if (!file) {
+            // 最后一次尝试，获取所有文件ID用于调试
+            let allFilesIds: string[] = [];
+            let allHistoryFilesIds: string[] = [];
+            setFiles((currentFiles) => {
+                allFilesIds = currentFiles.map(f => f.id);
+                return currentFiles;
+            });
+            setHistoryFiles((currentHistoryFiles) => {
+                allHistoryFilesIds = currentHistoryFiles.map(f => f.id);
+                return currentHistoryFiles;
+            });
+            
+            console.error("❌ 无法从表格中找到文件对象:", {
+                fileId,
+                filesCount: allFilesIds.length,
+                historyFilesCount: allHistoryFilesIds.length,
+                showHistory,
+                filesIds: allFilesIds,
+                historyFilesIds: allHistoryFilesIds,
+            });
+            throw new Error(`无法从表格中找到文件对象 (fileId: ${fileId})`);
+        }
+        
+        // 验证文件对象中是否包含必要的字段
+        if (!file.city || !file.name) {
+            console.error("❌ 文件对象缺少必要字段:", {
+                fileId,
+                file,
+                hasCity: !!file.city,
+                city: file.city || "(空)",
+                hasName: !!file.name,
+                name: file.name || "(空)",
+            });
+            throw new Error(`文件对象缺少必要字段 (fileId: ${fileId}, city: ${file.city || "空"}, name: ${file.name || "空"})`);
+        }
+        
+        console.log("✅ 从表格中成功获取文件信息:", {
+            fileId,
+            city: file.city,
+            name: file.name,
+        });
+
+        // 如果是覆盖模式，重置审核状态
+        if (file && mode === "overwrite" && file.isVerified) {
+            setFiles((prev) =>
+                prev.map((f) =>
+                    f.id === fileId
+                        ? {
+                            ...f,
+                            isVerified: false,
+                        }
+                        : f
+                )
+            );
+        }
+
         setFiles((prev) =>
             prev.map((f) =>
                 f.id === fileId
@@ -393,9 +619,44 @@ export default function StandardComparePage() {
                     : f
             )
         );
+        // 如果是历史记录模式，同时更新historyFiles状态
+        if (showHistory) {
+            setHistoryFiles((prev) =>
+                prev.map((f) =>
+                    f.id === fileId
+                        ? {
+                            ...f,
+                            compareStatus: "comparing" as const,
+                            compareProgress: "正在调用对比API...",
+                        }
+                        : f
+                )
+            );
+        }
 
         try {
             const token = getCozeTokenClient();
+            
+            // 必须从表格中的 file 对象获取 city 和 fileName（表格中显示的是正确的）
+            // file 对象在前面已经验证过，确保存在且包含必要字段
+            const city = file.city; // 直接从表格中获取
+            const fileName = file.name; // 直接从表格中获取
+
+            console.log("调用对比接口 - 从表格中获取的参数:", {
+                fileId,
+                file_url,
+                city: city, // 表格中的城市名称
+                fileName: fileName, // 表格中的文件名称
+                mode,
+                recordId,
+                source: "表格中的文件对象",
+                fileObject: {
+                    id: file.id,
+                    city: file.city,
+                    name: file.name,
+                    file_url: file.file_url,
+                },
+            });
 
             const response = await fetch("/api/standard-compare", {
                 method: "POST",
@@ -403,7 +664,13 @@ export default function StandardComparePage() {
                     "Content-Type": "application/json",
                     "x-coze-token": token,
                 },
-                body: JSON.stringify({file_url}),
+                body: JSON.stringify({
+                    file_url,
+                    city,
+                    fileName,
+                    mode,
+                    recordId,
+                }),
             });
 
             // 检查响应状态
@@ -427,6 +694,21 @@ export default function StandardComparePage() {
                             : f
                     )
                 );
+                // 如果是历史记录模式，同时更新historyFiles状态
+                if (showHistory) {
+                    setHistoryFiles((prev) =>
+                        prev.map((f) =>
+                            f.id === fileId
+                                ? {
+                                    ...f,
+                                    compareStatus: "error" as const,
+                                    error: errorMessage,
+                                    compareProgress: "对比失败",
+                                }
+                                : f
+                        )
+                    );
+                }
                 return;
             }
 
@@ -447,9 +729,25 @@ export default function StandardComparePage() {
                                 : f
                         )
                     );
+                    // 如果是历史记录模式，同时更新historyFiles状态
+                    if (showHistory) {
+                        setHistoryFiles((prev) =>
+                            prev.map((f) =>
+                                f.id === fileId
+                                    ? {
+                                        ...f,
+                                        compareStatus: "error" as const,
+                                        error: "返回数据为空，请重试",
+                                        compareProgress: "对比失败",
+                                    }
+                                    : f
+                            )
+                        );
+                    }
                     return;
                 }
 
+                // 更新文件状态
                 setFiles((prev) =>
                     prev.map((f) =>
                         f.id === fileId
@@ -458,10 +756,57 @@ export default function StandardComparePage() {
                                 compareStatus: "success" as const,
                                 compareResult: data.structured,
                                 compareProgress: "对比完成",
+                                compareTime: getBeijingTime(),
                             }
                             : f
                     )
                 );
+                // 如果是历史记录模式，同时更新historyFiles状态
+                if (showHistory) {
+                    setHistoryFiles((prev) =>
+                        prev.map((f) =>
+                            f.id === fileId
+                                ? {
+                                    ...f,
+                                    compareStatus: "success" as const,
+                                    compareResult: data.structured,
+                                    compareProgress: "对比完成",
+                                    compareTime: getBeijingTime(),
+                                }
+                                : f
+                        )
+                    );
+                }
+
+                // 如果接口返回了 _id，更新前端状态（数据库已在接口中保存）
+                if (data._id) {
+                    setFiles((prev) =>
+                        prev.map((f) =>
+                            f.id === fileId
+                                ? {
+                                    ...f,
+                                    _id: data._id,
+                                    isVerified: mode === "overwrite" ? false : f.isVerified, // 覆盖模式重置审核状态
+                                }
+                                : f
+                        )
+                    );
+                    // 如果是历史记录模式，同时更新historyFiles状态
+                    if (showHistory) {
+                        setHistoryFiles((prev) =>
+                            prev.map((f) =>
+                                f.id === fileId
+                                    ? {
+                                        ...f,
+                                        _id: data._id,
+                                        isVerified: mode === "overwrite" ? false : f.isVerified,
+                                    }
+                                    : f
+                            )
+                        );
+                    }
+                    console.log("数据库保存成功，已更新前端状态:", { _id: data._id, fileId });
+                }
             } else {
                 const errorMessage = data.message || (data.structured ? "返回数据格式不正确" : "对比失败");
                 setFiles((prev) =>
@@ -476,6 +821,21 @@ export default function StandardComparePage() {
                             : f
                     )
                 );
+                // 如果是历史记录模式，同时更新historyFiles状态
+                if (showHistory) {
+                    setHistoryFiles((prev) =>
+                        prev.map((f) =>
+                            f.id === fileId
+                                ? {
+                                    ...f,
+                                    compareStatus: "error" as const,
+                                    error: errorMessage,
+                                    compareProgress: "对比失败",
+                                }
+                                : f
+                        )
+                    );
+                }
             }
         } catch (error: any) {
             // 区分网络错误和其他错误
@@ -495,23 +855,229 @@ export default function StandardComparePage() {
                         : f
                 )
             );
+            // 如果是历史记录模式，同时更新historyFiles状态
+            if (showHistory) {
+                setHistoryFiles((prev) =>
+                    prev.map((f) =>
+                        f.id === fileId
+                            ? {
+                                ...f,
+                                compareStatus: "error" as const,
+                                error: errorMessage,
+                                compareProgress: "对比失败",
+                            }
+                            : f
+                    )
+                );
+            }
         }
     };
 
-    // 再次对比
+    // 执行对比（处理覆盖/创建模式）
+    const executeCompare = async (file: FileInfo, mode: "create" | "overwrite") => {
+        if (!file.file_url) {
+            showToast("文件URL不存在，无法对比", "error");
+            return;
+        }
+
+        if (showHistory && file._id) {
+            // 历史记录模式
+            if (mode === "overwrite") {
+                // 覆盖模式：直接在当前历史记录上显示对比状态
+                // 注意：这里只更新UI状态，不更新数据库。数据库更新只在对比完成后进行（在compareFile函数中）
+                historyComparingStates.current.set(file._id, {
+                    compareStatus: "comparing",
+                    compareResult: null,
+                });
+                setHistoryFiles((prev) =>
+                    prev.map((f) =>
+                        f._id === file._id
+                            ? {
+                                ...f,
+                                compareStatus: "comparing" as const,
+                                compareProgress: "正在对比...",
+                                isVerified: false, // 仅在UI中重置审核状态，数据库状态在对比完成后才更新
+                            }
+                            : f
+                    )
+                );
+                // 创建一个临时文件ID用于对比
+                const tempFileId = `temp-${file._id}-${Date.now()}`;
+                const tempFile: FileInfo = {
+                    ...file,
+                    id: tempFileId,
+                };
+                // 临时添加到files数组以便compareFile可以找到它
+                setFiles((prev) => [...prev, tempFile]);
+                // 等待状态更新
+                await new Promise((resolve) => setTimeout(resolve, 50));
+                try {
+                    // 调用对比函数，数据库更新在对比完成后才进行（在compareFile函数内部）
+                    await compareFile(tempFileId, file.file_url, "overwrite", file._id);
+                } finally {
+                    // 清理临时文件
+                    setFiles((prev) => prev.filter((f) => f.id !== tempFileId));
+                    // 对比完成后重新加载历史记录
+                    await loadHistoryRecords(currentPage);
+                }
+            } else {
+                // 创建模式：跳转到当前对比tab，创建全新的条目
+                setShowHistory(false);
+                // 等待tab切换完成
+                await new Promise((resolve) => setTimeout(resolve, 100));
+                // 创建全新的文件条目，和原来的历史记录没有关系
+                const newFile: FileInfo = {
+                    id: `new-${Date.now()}-${Math.random()}`,
+                    name: file.name,
+                    size: 0,
+                    sizeFormatted: "",
+                    file_url: file.file_url,
+                    city: file.city,
+                    uploadStatus: "success" as const,
+                    compareStatus: "idle" as const,
+                    compareResult: null,
+                    uploadProgress: 100,
+                    compareProgress: "",
+                    // 不设置 _id，这是全新的条目
+                };
+                setFiles((prev) => [...prev, newFile]);
+                // 等待状态更新
+                await new Promise((resolve) => {
+                    // 使用requestAnimationFrame确保状态已更新
+                    requestAnimationFrame(() => {
+                        setTimeout(() => {
+                            resolve(undefined);
+                        }, 200);
+                    });
+                });
+                // 使用新创建的文件进行对比
+                await compareFile(newFile.id, newFile.file_url, "create");
+            }
+        } else {
+            // 当前对比模式
+            await compareFile(file.id, file.file_url, mode, file._id);
+        }
+    };
+
+    // 再次对比（弹出模式选择对话框）
     const handleRecompare = async (fileId: string) => {
-        const file = files.find((f) => f.id === fileId);
+        const file = showHistory 
+            ? historyFiles.find((f) => f.id === fileId)
+            : files.find((f) => f.id === fileId);
+        
         if (!file || !file.file_url) {
             showToast("文件URL不存在，无法重新对比", "error");
             return;
         }
 
-        await compareFile(fileId, file.file_url);
+        if (file._id) {
+            // 如果有数据库ID，弹出模式选择对话框
+            setCompareModeModal({ open: true, file });
+        } else {
+            // 如果没有数据库ID，直接对比（创建模式）
+            await executeCompare(file, "create");
+        }
     };
 
     // 删除文件
-    const handleDelete = (fileId: string) => {
-        setFiles((prev) => prev.filter((f) => f.id !== fileId));
+    const handleDelete = async (fileId: string) => {
+        const file = showHistory 
+            ? historyFiles.find((f) => f.id === fileId)
+            : files.find((f) => f.id === fileId);
+
+        if (!file) return;
+
+        // 如果有数据库ID，需要删除数据库记录
+        if (file._id) {
+            try {
+                const response = await fetch(`/api/standard-compare-records?id=${encodeURIComponent(file._id)}`, {
+                    method: "DELETE",
+                });
+                const data = await response.json();
+                if (data.success) {
+                    if (showHistory) {
+                        await loadHistoryRecords(currentPage);
+                    } else {
+                        setFiles((prev) => prev.filter((f) => f.id !== fileId));
+                    }
+                    showToast("删除成功", "success");
+                } else {
+                    showToast("删除失败", "error");
+                }
+            } catch (error) {
+                console.error("删除记录失败:", error);
+                showToast("删除失败", "error");
+            }
+        } else {
+            // 如果没有数据库ID，只从前端删除
+            setFiles((prev) => prev.filter((f) => f.id !== fileId));
+        }
+    };
+
+    // 审核确认
+    const verifyRecord = async (_id: string, fileId: string) => {
+        try {
+            const response = await fetch("/api/standard-compare-records", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    _id,
+                    isVerified: true,
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error("更新失败");
+            }
+
+            const data = await response.json();
+            if (data.success) {
+                if (showHistory) {
+                    await loadHistoryRecords(currentPage);
+                } else {
+                    setFiles((prev) =>
+                        prev.map((f) =>
+                            f._id === _id
+                                ? {
+                                    ...f,
+                                    isVerified: true,
+                                }
+                                : f
+                        )
+                    );
+                }
+                showToast("已确认完成", "success");
+            } else {
+                showToast("确认失败", "error");
+            }
+        } catch (error) {
+            console.error("确认完成失败:", error);
+            showToast("确认失败", "error");
+        }
+    };
+
+    // 格式化对比时间
+    const formatCompareTime = (time?: string) => {
+        if (!time) return "-";
+        try {
+            const date = new Date(time);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, "0");
+            const day = String(date.getDate()).padStart(2, "0");
+            const hours = String(date.getHours()).padStart(2, "0");
+            const minutes = String(date.getMinutes()).padStart(2, "0");
+            return `${year}-${month}-${day} ${hours}:${minutes}`;
+        } catch (e) {
+            return "-";
+        }
+    };
+
+    // 筛选处理
+    const handleFilterChange = (value: string) => {
+        setFilterStatus(value);
+        if (showHistory) {
+            loadHistoryRecords(1);
+        }
     };
 
     // 拖拽处理
@@ -612,9 +1178,13 @@ export default function StandardComparePage() {
     const standardNames = getStandardNames();
 
     // 生成显示的文件列表（如果有文件就用文件，没有就生成10行空白数据）
-    const displayFiles: FileInfo[] = files.length > 0
-        ? files
-        : Array.from({ length: 10 }, (_, index) => ({
+    let displayFiles: FileInfo[];
+    if (showHistory) {
+        displayFiles = historyFiles;
+    } else if (files.length > 0) {
+        displayFiles = files;
+    } else {
+        displayFiles = Array.from({ length: 10 }, (_, index) => ({
             id: `placeholder-${index}`,
             name: "",
             size: 0,
@@ -627,12 +1197,29 @@ export default function StandardComparePage() {
             uploadProgress: 0,
             compareProgress: "",
         }));
+    }
+
+    // 筛选文件（仅历史记录模式下应用筛选）
+    let filteredFiles: FileInfo[];
+    if (showHistory) {
+        if (filterStatus === "全部状态") {
+            filteredFiles = displayFiles;
+        } else if (filterStatus === "已审核") {
+            filteredFiles = displayFiles.filter((f) => f.isVerified);
+        } else if (filterStatus === "未审核") {
+            filteredFiles = displayFiles.filter((f) => !f.isVerified);
+        } else {
+            filteredFiles = displayFiles;
+        }
+    } else {
+        filteredFiles = displayFiles;
+    }
 
     return (
         <>
             <Header username={username} onLogout={handleLogout}/>
             <main className="mx-auto max-w-[1400px] px-4 py-6 space-y-4">
-                {/* 返回首页按钮 */}
+                {/* 返回首页按钮和Tab切换 */}
                 <div className="flex items-center justify-between">
                     <button
                         onClick={() => router.push("/")}
@@ -644,22 +1231,78 @@ export default function StandardComparePage() {
                         </svg>
                         返回首页
                     </button>
-                    <div className="text-sm text-slate-500">
-                        已上传 {files.length} 个文件
+                    <div className="flex items-center gap-4">
+                        {/* Tab切换 */}
+                        <div className="flex items-center gap-2 bg-slate-100 rounded-lg p-1">
+                            <button
+                                onClick={() => setShowHistory(false)}
+                                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                                    !showHistory
+                                        ? "bg-white text-slate-900 shadow-sm"
+                                        : "text-slate-600 hover:text-slate-900"
+                                }`}
+                            >
+                                当前对比
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowHistory(true);
+                                    loadHistoryRecords(1);
+                                }}
+                                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                                    showHistory
+                                        ? "bg-white text-slate-900 shadow-sm"
+                                        : "text-slate-600 hover:text-slate-900"
+                                }`}
+                            >
+                                历史记录
+                            </button>
+                        </div>
+                        {/* 刷新按钮（仅历史记录显示） */}
+                        {showHistory && (
+                            <button
+                                onClick={() => loadHistoryRecords(currentPage)}
+                                disabled={isLoadingHistory}
+                                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm hover:bg-slate-50 transition-colors disabled:opacity-50"
+                            >
+                                <svg className={`h-4 w-4 ${isLoadingHistory ? "animate-spin" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                刷新
+                            </button>
+                        )}
+                        {/* 筛选（仅历史记录显示） */}
+                        {showHistory && (
+                            <select
+                                value={filterStatus}
+                                onChange={(e) => handleFilterChange(e.target.value)}
+                                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                            >
+                                <option value="全部状态">全部状态</option>
+                                <option value="已审核">已审核</option>
+                                <option value="未审核">未审核</option>
+                            </select>
+                        )}
+                        {!showHistory && (
+                            <div className="text-sm text-slate-500">
+                                已上传 {files.length} 个文件
+                            </div>
+                        )}
                     </div>
                 </div>
 
-                {/* 文件上传区域 */}
-                <div
-                    className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
-                        isDragging
-                            ? "border-blue-500 bg-blue-50"
-                            : "border-slate-300 bg-slate-50 hover:border-slate-400"
-                    }`}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onDrop={handleDrop}
-                >
+                {/* 文件上传区域（仅当前对比显示） */}
+                {!showHistory && (
+                    <div
+                        className={`border-2 border-dashed rounded-xl p-8 text-center transition-colors ${
+                            isDragging
+                                ? "border-blue-500 bg-blue-50"
+                                : "border-slate-300 bg-slate-50 hover:border-slate-400"
+                        }`}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                    >
                     <input
                         ref={fileInputRef}
                         type="file"
@@ -689,6 +1332,7 @@ export default function StandardComparePage() {
                         </button>
                     </div>
                 </div>
+                )}
 
                 {/* 对比结果表格 */}
                 <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -696,6 +1340,11 @@ export default function StandardComparePage() {
                         <table className="w-full border-collapse">
                                 <thead className="bg-slate-100">
                                 <tr>
+                                    {showHistory && (
+                                        <th className="border border-slate-300 px-4 py-3 text-left font-semibold text-slate-900" style={{ width: "160px" }}>
+                                            时间
+                                        </th>
+                                    )}
                                     <th className="border border-slate-300 px-4 py-3 text-left font-semibold text-blue-900 w-[400px] bg-blue-200 whitespace-nowrap sticky left-0 z-20 shadow-[2px_0_4px_rgba(0,0,0,0.1)]">
                                         城市
                                     </th>
@@ -724,8 +1373,18 @@ export default function StandardComparePage() {
                                 </tr>
                                 </thead>
                                 <tbody>
-                                {displayFiles.map((file) => (
-                                    <tr key={file.id} className="border-b border-slate-200 hover:bg-slate-50">
+                                {filteredFiles.map((file) => (
+                                    <tr 
+                                        key={file.id} 
+                                        className={`border-b border-slate-200 hover:bg-slate-50 ${
+                                            file.isVerified ? "bg-emerald-50/50 border-l-4 border-l-emerald-500" : ""
+                                        }`}
+                                    >
+                                        {showHistory && (
+                                            <td className="border border-slate-300 px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
+                                                {formatCompareTime(file.compareTime)}
+                                            </td>
+                                        )}
                                         <td className="border border-slate-300 px-4 py-3 w-[400px] bg-blue-50 sticky left-0 z-20 shadow-[2px_0_4px_rgba(0,0,0,0.1)]">
                                             <div className="font-medium text-sm text-blue-900 whitespace-nowrap">
                                                 {file.city || <span className="text-slate-400">-</span>}
@@ -763,6 +1422,14 @@ export default function StandardComparePage() {
                                                                   d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                                         </svg>
                                                         {file.compareProgress || "对比中..."}
+                                                    </div>
+                                                )}
+                                                {file.compareStatus === "success" && (
+                                                    <div className="flex flex-col gap-1 items-center text-xs">
+                                                        <span className="text-green-600 font-medium">已完成</span>
+                                                        {file.isVerified && (
+                                                            <span className="text-emerald-600 font-medium">已审核</span>
+                                                        )}
                                                     </div>
                                                 )}
                                                  {file.compareStatus === "error" && (
@@ -832,21 +1499,42 @@ export default function StandardComparePage() {
                                         <td className="border border-slate-300 px-4 py-3">
                                             {file.name ? (
                                                 <div className="flex flex-col gap-2">
-                                                    {file.file_url && (
+                                                    <div className="flex flex-col gap-2">
+                                                        {file.file_url && (
+                                                            <button
+                                                                onClick={() => handleRecompare(file.id)}
+                                                                disabled={file.compareStatus === "comparing"}
+                                                                className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                            >
+                                                                {file.compareStatus === "comparing" ? "对比中..." : "再次对比"}
+                                                            </button>
+                                                        )}
                                                         <button
-                                                            onClick={() => handleRecompare(file.id)}
-                                                            disabled={file.compareStatus === "comparing"}
-                                                            className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                                            onClick={() => handleDelete(file.id)}
+                                                            className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs text-red-600 hover:bg-red-100 transition-colors"
                                                         >
-                                                            {file.compareStatus === "comparing" ? "对比中..." : "再次对比"}
+                                                            删除
+                                                        </button>
+                                                    </div>
+                                                    {file.compareStatus === "success" && !file.isVerified && file._id && (
+                                                        <button
+                                                            onClick={() => setVerifyModal({ open: true, file })}
+                                                            className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-700 flex items-center gap-1"
+                                                        >
+                                                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                                            </svg>
+                                                            确认完成
                                                         </button>
                                                     )}
-                                                    <button
-                                                        onClick={() => handleDelete(file.id)}
-                                                        className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs text-red-600 hover:bg-red-100 transition-colors"
-                                                    >
-                                                        删除
-                                                    </button>
+                                                    {file.isVerified && (
+                                                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1.5 text-xs text-emerald-700">
+                                                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                                            </svg>
+                                                            已确认
+                                                        </span>
+                                                    )}
                                                 </div>
                                             ) : (
                                                 <div className="text-xs text-slate-400">-</div>
@@ -857,7 +1545,141 @@ export default function StandardComparePage() {
                                 </tbody>
                             </table>
                         </div>
-                    </div>
+                    {/* 分页控件（仅历史记录显示） */}
+                    {showHistory && totalPages > 1 && (
+                        <div className="flex items-center justify-between px-4 py-4 border-t border-slate-200">
+                            <div className="text-sm text-slate-600">
+                                第 {currentPage} / {totalPages} 页
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => {
+                                        if (currentPage > 1) {
+                                            loadHistoryRecords(currentPage - 1);
+                                        }
+                                    }}
+                                    disabled={currentPage === 1 || isLoadingHistory}
+                                    className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    上一页
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (currentPage < totalPages) {
+                                            loadHistoryRecords(currentPage + 1);
+                                        }
+                                    }}
+                                    disabled={currentPage === totalPages || isLoadingHistory}
+                                    className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    下一页
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* 覆盖/创建模式选择对话框 */}
+                {compareModeModal.open && compareModeModal.file && createPortal(
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                        <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 relative">
+                            <button
+                                onClick={() => setCompareModeModal({ open: false, file: null })}
+                                className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                            <div className="p-6">
+                                <h3 className="text-lg font-semibold text-slate-900 mb-2">请选择对比模式</h3>
+                                <p className="text-sm text-slate-600 mb-6">
+                                    城市：{compareModeModal.file.city}
+                                </p>
+                                <div className="space-y-3">
+                                    <button
+                                        onClick={async () => {
+                                            setCompareModeModal({ open: false, file: null });
+                                            await executeCompare(compareModeModal.file!, "overwrite");
+                                        }}
+                                        className="w-full px-6 py-5 rounded-2xl bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] flex flex-col items-center justify-center text-center relative overflow-hidden group"
+                                    >
+                                        <div className="absolute inset-0 bg-gradient-to-r from-blue-400/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                        <div className="relative z-10">
+                                            <div className="font-bold text-lg mb-1.5">覆盖当前记录</div>
+                                            <div className="text-sm text-blue-50 leading-relaxed">
+                                                更新当前记录
+                                            </div>
+                                        </div>
+                                    </button>
+                                    <button
+                                        onClick={async () => {
+                                            setCompareModeModal({ open: false, file: null });
+                                            await executeCompare(compareModeModal.file!, "create");
+                                        }}
+                                        className="w-full px-6 py-5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] flex flex-col items-center justify-center text-center relative overflow-hidden group"
+                                    >
+                                        <div className="absolute inset-0 bg-gradient-to-r from-emerald-400/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                        <div className="relative z-10">
+                                            <div className="font-bold text-lg mb-1.5">创建新的记录</div>
+                                            <div className="text-sm text-emerald-50 leading-relaxed">
+                                                {showHistory 
+                                                    ? "跳转并创建新条目"
+                                                    : "创建新的对比记录"}
+                                            </div>
+                                        </div>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                )}
+
+                {/* 审核确认对话框 */}
+                {verifyModal.open && verifyModal.file && createPortal(
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                        <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 relative">
+                            <button
+                                onClick={() => setVerifyModal({ open: false, file: null })}
+                                className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                            <div className="p-6 text-center">
+                                <h3 className="text-lg font-semibold text-slate-900 mb-2">确认完成审核</h3>
+                                <p className="text-sm text-slate-600 mb-4">
+                                    城市：<span className="font-medium text-slate-800">{verifyModal.file.city}</span>
+                                </p>
+                                <p className="text-sm text-slate-700 mb-6">
+                                    确认要将此对比记录标记为已审核完成吗？此操作将更新数据库中的审核状态。
+                                </p>
+                                <div className="flex justify-center gap-3">
+                                    <button
+                                        onClick={() => setVerifyModal({ open: false, file: null })}
+                                        className="px-5 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 transition-colors"
+                                    >
+                                        取消
+                                    </button>
+                                    <button
+                                        onClick={async () => {
+                                            if (verifyModal.file?._id) {
+                                                setVerifyModal({ open: false, file: null });
+                                                await verifyRecord(verifyModal.file._id, verifyModal.file.id);
+                                            }
+                                        }}
+                                        className="px-5 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+                                    >
+                                        确认完成
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>,
+                    document.body
+                )}
 
                 {/* 详情对话框 */}
                 {detailModal.open && detailModal.result && (
