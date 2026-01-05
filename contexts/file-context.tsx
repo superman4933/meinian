@@ -127,7 +127,8 @@ export function FileProvider({ children }: { children: ReactNode }) {
             
             if (willBeEmpty && c._id) {
               // 异步删除数据库记录（不阻塞UI）
-              fetch(`/api/policy-compare-records?id=${encodeURIComponent(c._id)}`, {
+              const recordId = c._id; // 此时已经确认 _id 存在
+              fetch(`/api/policy-compare-records?id=${encodeURIComponent(recordId)}`, {
                 method: "DELETE",
               })
                 .then((res) => res.json())
@@ -220,7 +221,8 @@ export function FileProvider({ children }: { children: ReactNode }) {
 
       // 如果存在_id，删除数据库记录
       if (comparison._id) {
-        fetch(`/api/policy-compare-records?id=${comparison._id}`, {
+        const recordId = comparison._id; // 此时已经确认 _id 存在
+        fetch(`/api/policy-compare-records?id=${recordId}`, {
           method: "DELETE",
         }).catch((error) => {
           console.error("删除数据库记录失败:", error);

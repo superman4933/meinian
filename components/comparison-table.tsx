@@ -1322,8 +1322,12 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
     }
     
     const row = verifyModal.row;
+    const rowId = row._id; // 此时已经确认 _id 存在
+    if (!rowId) {
+      return;
+    }
     setVerifyModal({ open: false, row: null });
-    await verifyRecord(row._id, row.id);
+    await verifyRecord(rowId, row.id);
   };
 
   // 审核记录

@@ -882,16 +882,17 @@ export default function StandardComparePage() {
 
         if (showHistory && file._id) {
             // 历史记录模式
+            const fileId = file._id; // 此时已经确认 _id 存在
             if (mode === "overwrite") {
                 // 覆盖模式：直接在当前历史记录上显示对比状态
                 // 注意：这里只更新UI状态，不更新数据库。数据库更新只在对比完成后进行（在compareFile函数中）
-                historyComparingStates.current.set(file._id, {
+                historyComparingStates.current.set(fileId, {
                     compareStatus: "comparing",
                     compareResult: null,
                 });
                 setHistoryFiles((prev) =>
                     prev.map((f) =>
-                        f._id === file._id
+                        f._id === fileId
                             ? {
                                 ...f,
                                 compareStatus: "comparing" as const,
@@ -902,7 +903,7 @@ export default function StandardComparePage() {
                     )
                 );
                 // 创建一个临时文件ID用于对比
-                const tempFileId = `temp-${file._id}-${Date.now()}`;
+                const tempFileId = `temp-${fileId}-${Date.now()}`;
                 const tempFile: FileInfo = {
                     ...file,
                     id: tempFileId,
@@ -913,7 +914,7 @@ export default function StandardComparePage() {
                 await new Promise((resolve) => setTimeout(resolve, 50));
                 try {
                     // 调用对比函数，数据库更新在对比完成后才进行（在compareFile函数内部）
-                    await compareFile(tempFileId, file.file_url, "overwrite", file._id);
+                    await compareFile(tempFileId, file.file_url, "overwrite", fileId);
                 } finally {
                     // 清理临时文件
                     setFiles((prev) => prev.filter((f) => f.id !== tempFileId));
@@ -955,7 +956,7 @@ export default function StandardComparePage() {
             }
         } else {
             // 当前对比模式
-            await compareFile(file.id, file.file_url, mode, file._id);
+            await compareFile(file.id, file.file_url, mode, file._id); // file._id 可能是 undefined，但 compareFile 接受可选参数
         }
     };
 
@@ -989,8 +990,9 @@ export default function StandardComparePage() {
 
         // 如果有数据库ID，需要删除数据库记录
         if (file._id) {
+            const fileId = file._id; // 此时已经确认 _id 存在
             try {
-                const response = await fetch(`/api/standard-compare-records?id=${encodeURIComponent(file._id)}`, {
+                const response = await fetch(`/api/standard-compare-records?id=${encodeURIComponent(fileId)}`, {
                     method: "DELETE",
                 });
                 const data = await response.json();
@@ -1665,9 +1667,11 @@ export default function StandardComparePage() {
                                     </button>
                                     <button
                                         onClick={async () => {
-                                            if (verifyModal.file?._id) {
+                                            const file = verifyModal.file;
+                                            if (file?._id) {
+                                                const fileId = file._id; // 此时已经确认 _id 存在
                                                 setVerifyModal({ open: false, file: null });
-                                                await verifyRecord(verifyModal.file._id, verifyModal.file.id);
+                                                await verifyRecord(fileId, file.id);
                                             }
                                         }}
                                         className="px-5 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
