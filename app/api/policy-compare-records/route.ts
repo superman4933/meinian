@@ -12,10 +12,17 @@ let databaseInstance: ReturnType<ReturnType<typeof tcb.init>["database"]> | null
 
 function getDatabase() {
   if (!dbInstance) {
+    const secretId = process.env.TCB_SECRET_ID;
+    const secretKey = process.env.TCB_SECRET_KEY;
+    
+    if (!secretId || !secretKey) {
+      throw new Error("TCB_SECRET_ID and TCB_SECRET_KEY must be set in environment variables");
+    }
+    
     dbInstance = tcb.init({
       env: ENV_ID,
-      secretId: process.env.TCB_SECRET_ID || "AKIDL0WqwqX3OWRBjFaifPxISP9fx5zgBVbY",
-      secretKey: process.env.TCB_SECRET_KEY || "oSwDG6lDUaVFm7GxVqxrX0ING0Zv4zhB",
+      secretId: secretId,
+      secretKey: secretKey,
     });
     databaseInstance = dbInstance.database();
   }
