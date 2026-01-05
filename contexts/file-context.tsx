@@ -41,6 +41,9 @@ export interface ComparisonRow {
   comparisonStructured?: ComparisonStructuredData; // JSON格式的结构化数据
   isJsonFormat?: boolean; // 标识是否是JSON格式
   comparisonError?: string;
+  _id?: string; // 数据库记录ID（数据库的_id字段），用于更新和删除记录
+  compareTime?: string; // 对比时间（ISO字符串格式，北京时间）
+  isVerified?: boolean; // 是否已审核确认
 }
 
 interface FileContextType {
@@ -52,6 +55,7 @@ interface FileContextType {
   getComparisonByCity: (city: string) => ComparisonRow | undefined;
   updateComparison: (city: string, updates: Partial<ComparisonRow>) => void;
   resetComparisons: () => void;
+  removeComparison: (comparisonId: string) => void; // 删除对比行（包括数据库记录）
 }
 
 const FileContext = createContext<FileContextType | undefined>(undefined);
@@ -114,23 +118,47 @@ export function FileProvider({ children }: { children: ReactNode }) {
       // 从对比列表中移除
       setComparisons((prevComps) => {
         return prevComps.map((c) => {
-          if (c.thisYearFile?.id === fileId) {
-            return {
-              ...c,
-              thisYearFile: null,
-              comparisonStatus: "none" as const,
-              comparisonResult: undefined,
-              comparisonError: undefined,
-            };
-          }
-          if (c.lastYearFile?.id === fileId) {
-            return {
-              ...c,
-              lastYearFile: null,
-              comparisonStatus: "none" as const,
-              comparisonResult: undefined,
-              comparisonError: undefined,
-            };
+          // 如果删除的文件属于某个对比行，检查是否需要删除数据库记录
+          if (c.thisYearFile?.id === fileId || c.lastYearFile?.id === fileId) {
+            // 如果删除后该行完全没有文件了，且存在_id，则删除数据库记录
+            const willBeEmpty = 
+              (c.thisYearFile?.id === fileId && !c.lastYearFile) ||
+              (c.lastYearFile?.id === fileId && !c.thisYearFile);
+            
+            if (willBeEmpty && c._id) {
+              // 异步删除数据库记录（不阻塞UI）
+              fetch(`/api/policy-compare-records?id=${encodeURIComponent(c._id)}`, {
+                method: "DELETE",
+              })
+                .then((res) => res.json())
+                .then((data) => {
+                  if (!data.success) {
+                    console.warn("删除数据库记录失败:", data);
+                  }
+                })
+                .catch((error) => {
+                  console.error("删除数据库记录时出错:", error);
+                });
+            }
+
+            if (c.thisYearFile?.id === fileId) {
+              return {
+                ...c,
+                thisYearFile: null,
+                comparisonStatus: "none" as const,
+                comparisonResult: undefined,
+                comparisonError: undefined,
+              };
+            }
+            if (c.lastYearFile?.id === fileId) {
+              return {
+                ...c,
+                lastYearFile: null,
+                comparisonStatus: "none" as const,
+                comparisonResult: undefined,
+                comparisonError: undefined,
+              };
+            }
           }
           return c;
         }).filter((c) => c.thisYearFile || c.lastYearFile); // 移除完全没有文件的行
@@ -185,6 +213,25 @@ export function FileProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  const removeComparison = (comparisonId: string) => {
+    setComparisons((prev) => {
+      const comparison = prev.find((c) => c.id === comparisonId);
+      if (!comparison) return prev;
+
+      // 如果存在_id，删除数据库记录
+      if (comparison._id) {
+        fetch(`/api/policy-compare-records?id=${comparison._id}`, {
+          method: "DELETE",
+        }).catch((error) => {
+          console.error("删除数据库记录失败:", error);
+        });
+      }
+
+      // 从列表中移除
+      return prev.filter((c) => c.id !== comparisonId);
+    });
+  };
+
   return (
     <FileContext.Provider
       value={{
@@ -196,6 +243,7 @@ export function FileProvider({ children }: { children: ReactNode }) {
         getComparisonByCity,
         updateComparison,
         resetComparisons,
+        removeComparison,
       }}
     >
       {children}

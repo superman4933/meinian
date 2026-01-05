@@ -43,9 +43,9 @@ function FileDisplay({
 }: {
   file: FileInfo | null;
   type: "thisYear" | "lastYear";
-  onDelete: () => void;
+  onDelete?: () => void;
   onPreview: () => void;
-  onUpload: () => void;
+  onUpload?: () => void;
 }) {
   if (!file) {
     return (
@@ -53,12 +53,14 @@ function FileDisplay({
         <span className="inline-flex h-6 w-6 items-center justify-center rounded-lg bg-slate-100 text-xs">—</span>
         <div className="flex-1">
           <div className="font-medium text-slate-400 text-xs">未上传</div>
-          <button
-            onClick={onUpload}
-            className="text-xs text-blue-600 hover:text-blue-800 mt-1"
-          >
-            点击上传
-          </button>
+          {onUpload && (
+            <button
+              onClick={onUpload}
+              className="text-xs text-blue-600 hover:text-blue-800 mt-1"
+            >
+              点击上传
+            </button>
+          )}
         </div>
       </div>
     );
@@ -113,12 +115,14 @@ function FileDisplay({
           </div>
           <div className="text-xs text-red-500 mt-1">{file.error || "上传失败"}</div>
         </div>
-        <button
-          onClick={onDelete}
-          className="text-xs text-red-600 hover:text-red-800 px-2 py-1 flex-shrink-0"
-        >
-          删除
-        </button>
+        {onDelete && (
+          <button
+            onClick={onDelete}
+            className="text-xs text-red-600 hover:text-red-800 px-2 py-1 flex-shrink-0"
+          >
+            删除
+          </button>
+        )}
       </div>
     );
   }
@@ -144,13 +148,15 @@ function FileDisplay({
         </button>
         <div className="text-xs text-slate-500 mt-1">{file.sizeFormatted}</div>
       </div>
-      <button
-        onClick={onDelete}
-        className="text-xs text-slate-400 hover:text-red-600 px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-        title="删除文件"
-      >
-        删除
-      </button>
+      {onDelete && (
+        <button
+          onClick={onDelete}
+          className="text-xs text-slate-400 hover:text-red-600 px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+          title="删除文件"
+        >
+          删除
+        </button>
+      )}
     </div>
   );
 }
@@ -169,7 +175,7 @@ function PreviewRow({
   if (row.comparisonStatus === "comparing") {
     return (
       <tr className="bg-slate-50/50">
-        <td colSpan={6} className="px-4 py-4">
+        <td colSpan={7} className="px-4 py-4">
           <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-center">
             <div className="inline-flex items-center gap-2">
               <svg className="animate-spin h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24">
@@ -228,7 +234,7 @@ function PreviewRow({
 
     return (
       <tr className="bg-slate-50/50">
-        <td colSpan={6} className="px-4 py-4">
+        <td colSpan={7} className="px-4 py-4">
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold">对比结果</h3>
@@ -294,7 +300,7 @@ function PreviewRow({
   if (row.comparisonStatus === "error") {
     return (
       <tr className="bg-slate-50/50">
-        <td colSpan={6} className="px-4 py-4">
+        <td colSpan={7} className="px-4 py-4">
           <div className="rounded-xl border border-red-200 bg-red-50 p-4">
             <div className="text-sm text-red-700">
               <strong>对比失败：</strong>
@@ -513,7 +519,7 @@ function ComparisonCardsRow({
 
   return (
     <tr className="bg-slate-50/50">
-      <td colSpan={6} className="px-4 py-4">
+      <td colSpan={7} className="px-4 py-4">
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           {/* 摘要显示 - 顶部 */}
           {summary && (
@@ -775,6 +781,34 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
     open: false,
     row: null,
   });
+  
+  // 历史记录分页状态
+  const [historyRecords, setHistoryRecords] = useState<any[]>([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  
+  // 对比模式选择对话框状态
+  const [compareModeModal, setCompareModeModal] = useState<{
+    open: boolean;
+    row: ComparisonRow | null;
+  }>({
+    open: false,
+    row: null,
+  });
+  
+  // 确认完成对话框状态
+  const [verifyModal, setVerifyModal] = useState<{
+    open: boolean;
+    row: ComparisonRow | null;
+  }>({
+    open: false,
+    row: null,
+  });
+  
+  // 历史记录中正在对比的条目状态（key: record._id, value: ComparisonRow状态）
+  const [historyComparingStates, setHistoryComparingStates] = useState<Map<string, Partial<ComparisonRow>>>(new Map());
 
   function togglePreview(id: string) {
     setOpenPreviews((prev) => {
@@ -814,6 +848,34 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       showToast("文件预览链接不可用", "error");
     }
   };
+
+  // 加载历史记录
+  const loadHistoryRecords = async (page: number = 1) => {
+    setIsLoadingHistory(true);
+    try {
+      const response = await fetch(`/api/policy-compare-records?page=${page}&pageSize=100`);
+      const data = await response.json();
+
+      if (data.success) {
+        setHistoryRecords(data.data || []);
+        setCurrentPage(data.pagination?.page || 1);
+        setTotalPages(data.pagination?.totalPages || 1);
+      } else {
+        console.error("加载历史记录失败:", data);
+        showToast("加载历史记录失败", "error");
+      }
+    } catch (error) {
+      console.error("加载历史记录时出错:", error);
+      showToast("加载历史记录时出错", "error");
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  // 页面加载时加载历史记录
+  useEffect(() => {
+    loadHistoryRecords(1);
+  }, []);
 
   const handleFileUpload = async (rowId: string, type: "thisYear" | "lastYear") => {
     const input = document.createElement("input");
@@ -954,7 +1016,8 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
     input.click();
   };
 
-  const handleCompare = async (row: ComparisonRow) => {
+  // 打开对比模式选择对话框
+  const handleCompare = (row: ComparisonRow) => {
     if (!row.thisYearFile || !row.lastYearFile) {
       showToast("请先上传新年度和旧年度的文件", "error");
       return;
@@ -976,7 +1039,105 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       return;
     }
 
-    updateComparison(row.id, { comparisonStatus: "comparing" });
+    // 打开对比模式选择对话框
+    setCompareModeModal({ open: true, row });
+  };
+
+  // 执行对比（根据模式）
+  const executeCompare = async (row: ComparisonRow, mode: "overwrite" | "create") => {
+    const oldFileUrl = row.lastYearFile!.file_url || row.lastYearFile!.url;
+    const newFileUrl = row.thisYearFile!.file_url || row.thisYearFile!.url;
+    const oldFileName = row.lastYearFile!.name || "";
+    const newFileName = row.thisYearFile!.name || "";
+
+    // 保存是否为历史记录覆盖模式的标志
+    const isHistoryOverwrite = showHistory && mode === "overwrite" && row._id;
+
+    let targetRowId = row.id;
+    let targetRow = row;
+
+    // 如果是历史记录且选择创建新记录，需要跳转到当前对比tab并创建新条目
+    if (showHistory && mode === "create") {
+      // 查找当前对比中是否已有这个城市的对比行
+      let existingComparison = comparisons.find(c => c.id === row.company);
+      
+      if (!existingComparison) {
+        // 如果不存在，通过addFile来创建新的对比行
+        // 先添加旧年度文件
+        if (row.lastYearFile) {
+          addFile({
+            ...row.lastYearFile,
+            id: `${row.company}_lastYear_${Date.now()}`,
+            city: row.company,
+            type: "lastYear",
+          });
+        }
+        // 再添加新年度文件
+        if (row.thisYearFile) {
+          addFile({
+            ...row.thisYearFile,
+            id: `${row.company}_thisYear_${Date.now()}`,
+            city: row.company,
+            type: "thisYear",
+          });
+        }
+        
+        // 跳转到当前对比tab（在添加文件之后）
+        setShowHistory(false);
+        
+        // 等待React状态更新完成（使用requestAnimationFrame等待下一个渲染周期）
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // 再次等待一下让对比行创建完成
+        for (let i = 0; i < 30; i++) {
+          await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        
+        // 直接使用row.company作为targetRowId，因为addFile创建的对比行id就是row.company
+        targetRowId = row.company;
+        // 创建一个临时的targetRow，包含文件信息
+        targetRow = {
+          id: row.company,
+          company: row.company,
+          thisYearFile: row.thisYearFile,
+          lastYearFile: row.lastYearFile,
+          comparisonStatus: "none" as const,
+        };
+      } else {
+        // 如果已存在，直接跳转并使用现有的对比行
+        setShowHistory(false);
+        targetRowId = existingComparison.id;
+        targetRow = existingComparison;
+        // 更新文件信息（使用历史记录中的文件信息）
+        updateComparison(targetRowId, {
+          thisYearFile: row.thisYearFile,
+          lastYearFile: row.lastYearFile,
+        });
+      }
+    }
+    // 如果是历史记录且选择覆盖模式，直接在当前历史记录条目上显示对比状态，不跳转
+    if (isHistoryOverwrite) {
+      // 更新历史记录的对比状态，同时重置审核状态
+      setHistoryComparingStates(prev => {
+        const newMap = new Map(prev);
+        newMap.set(row._id!, { 
+          comparisonStatus: "comparing",
+          isVerified: false, // 重新对比时重置审核状态
+        });
+        return newMap;
+      });
+      // targetRowId 保持为 row.id，这样会在历史记录中更新状态
+      targetRowId = row.id;
+      targetRow = row;
+    } else {
+      // 非历史记录覆盖模式，使用正常的updateComparison，同时重置审核状态
+      updateComparison(targetRowId, { 
+        comparisonStatus: "comparing",
+        isVerified: false, // 重新对比时重置审核状态
+      });
+    }
 
     try {
       // 获取token并添加到请求头
@@ -998,23 +1159,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
 
       const data = await response.json();
 
-      // 记录对比接口的原始返回
-      console.log("政策单独对比 - 接口原始返回:", {
-        rowId: row.id,
-        company: row.company,
-        file1_url: oldFileUrl,
-        file2_url: newFileUrl,
-        responseStatus: response.status,
-        responseOk: response.ok,
-        rawResponse: JSON.stringify(data, null, 2),
-        success: data.success,
-        hasData: !!data.data,
-        executeId: data.execute_id,
-        debugUrl: data.debug_url,
-      });
-
       if (!response.ok || !data.success) {
-        // 区分不同类型的错误
         let errorMessage = "对比失败";
         if (!response.ok) {
           if (response.status === 401) {
@@ -1029,46 +1174,378 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         } else {
           errorMessage = data.message || "对比失败";
         }
-        
-        console.error("政策单独对比失败:", {
-          rowId: row.id,
-          error: errorMessage,
-          fullError: data,
-        });
         throw new Error(errorMessage);
       }
-
-      console.log("政策单独对比成功:", {
-        rowId: row.id,
-        company: row.company,
-        resultData: data.data,
-        markdown: data.markdown,
-        structured: data.structured,
-        isJsonFormat: data.isJsonFormat,
-        resultType: typeof data.data,
-      });
 
       // 保存结果（可能是结构化数据或原始内容）
       const resultContent = data.markdown || data.data || "对比完成";
 
-      updateComparison(row.id, {
-        comparisonStatus: "done",
-        comparisonResult: resultContent,
-        comparisonStructured: data.structured || undefined,
-        isJsonFormat: data.isJsonFormat || false,
-        comparisonError: undefined,
-      });
+      // 获取北京时间（UTC+8）
+      const getBeijingTime = () => {
+        const now = new Date();
+        const beijingTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // UTC+8
+        return beijingTime.toISOString();
+      };
+
+      // 如果是历史记录覆盖模式，更新历史记录状态
+      if (isHistoryOverwrite && targetRow._id) {
+        setHistoryComparingStates(prev => {
+          const newMap = new Map(prev);
+          newMap.set(targetRow._id!, {
+            comparisonStatus: "done",
+            comparisonResult: resultContent,
+            comparisonStructured: data.structured || undefined,
+            isJsonFormat: data.isJsonFormat || false,
+            comparisonError: undefined,
+            compareTime: getBeijingTime(),
+            isVerified: false,
+          });
+          return newMap;
+        });
+      } else {
+        updateComparison(targetRowId, {
+          comparisonStatus: "done",
+          comparisonResult: resultContent,
+          comparisonStructured: data.structured || undefined,
+          isJsonFormat: data.isJsonFormat || false,
+          comparisonError: undefined,
+          compareTime: getBeijingTime(), // 当前对比时间（北京时间）
+          isVerified: false, // 默认未审核
+        });
+      }
+
+      // 对比完成后，保存原始扣子API返回数据到数据库
+      try {
+        // 保存扣子API的完整原始返回数据（从API返回的rawCozeResponse字段获取）
+        const rawCozeData = data.rawCozeResponse || data;
+        
+        if (mode === "overwrite" && targetRow._id) {
+          // 覆盖模式：更新现有记录
+          const updateResponse = await fetch("/api/policy-compare-records", {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              _id: targetRow._id,
+              company: targetRow.company,
+              oldFileName: oldFileName,
+              newFileName: newFileName,
+              oldFileUrl: oldFileUrl,
+              newFileUrl: newFileUrl,
+              rawCozeResponse: rawCozeData,
+              add_time: getBeijingTime(),
+              isVerified: false, // 重新对比后重置审核状态
+            }),
+          });
+
+          const updateData = await updateResponse.json();
+          if (!updateData.success) {
+            throw new Error(updateData.message || "更新记录失败");
+          }
+          // _id保持不变
+        } else {
+          // 创建模式：创建新记录
+          const saveResponse = await fetch("/api/policy-compare-records", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              company: targetRow.company,
+              oldFileName: oldFileName,
+              newFileName: newFileName,
+              oldFileUrl: oldFileUrl,
+              newFileUrl: newFileUrl,
+              status: "done",
+              // 保存扣子API的原始返回数据（不解析，保持原始格式）
+              rawCozeResponse: rawCozeData,
+            }),
+          });
+
+          const saveData = await saveResponse.json();
+          if (saveData.success && saveData._id) {
+            // 保存数据库的_id到ComparisonRow中，用于后续更新操作
+            updateComparison(targetRowId, { _id: saveData._id });
+          }
+        }
+      } catch (saveError) {
+        console.error("保存对比结果到数据库失败:", saveError);
+        // 保存失败不影响UI显示
+      }
+
+      showToast("对比完成", "success");
     } catch (error: any) {
-      updateComparison(row.id, {
-        comparisonStatus: "error",
-        comparisonError: error.message || "对比失败",
-        comparisonResult: undefined,
-      });
+      // 如果是历史记录覆盖模式，更新历史记录错误状态
+      if (isHistoryOverwrite && targetRow._id) {
+        setHistoryComparingStates(prev => {
+          const newMap = new Map(prev);
+          newMap.set(targetRow._id!, {
+            comparisonStatus: "error",
+            comparisonError: error.message || "对比失败",
+            comparisonResult: undefined,
+          });
+          return newMap;
+        });
+      } else {
+        updateComparison(targetRowId, {
+          comparisonStatus: "error",
+          comparisonError: error.message || "对比失败",
+          comparisonResult: undefined,
+        });
+      }
+      showToast(error.message || "对比失败", "error");
     }
   };
 
+  // 处理确认完成（审核）- 弹出确认对话框
+  const handleVerify = (row: ComparisonRow) => {
+    if (row.comparisonStatus !== "done") {
+      showToast("请先完成对比", "error");
+      return;
+    }
+
+    // 必须有_id才能更新，如果没有说明对比结果还没保存到数据库
+    if (!row._id) {
+      showToast("记录尚未保存，请等待保存完成后再确认", "error");
+      return;
+    }
+
+    // 弹出确认对话框
+    setVerifyModal({ open: true, row });
+  };
+
+  // 确认执行审核操作
+  const confirmVerify = async () => {
+    if (!verifyModal.row || !verifyModal.row._id) {
+      return;
+    }
+    
+    const row = verifyModal.row;
+    setVerifyModal({ open: false, row: null });
+    await verifyRecord(row._id, row.id);
+  };
+
+  // 审核记录
+  const verifyRecord = async (_id: string, rowId: string) => {
+    try {
+      const response = await fetch("/api/policy-compare-records", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          _id: _id, // 使用数据库的_id字段
+          isVerified: true,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // 判断是否是历史记录（历史记录的rowId格式为 history_${_id}）
+        if (rowId.startsWith("history_")) {
+          // 历史记录：更新 historyComparingStates
+          setHistoryComparingStates(prev => {
+            const newMap = new Map(prev);
+            const existingState = newMap.get(_id) || {};
+            newMap.set(_id, {
+              ...existingState,
+              isVerified: true,
+            });
+            return newMap;
+          });
+        } else {
+          // 当前对比：更新 comparisons
+          updateComparison(rowId, { isVerified: true });
+        }
+        showToast("已确认完成", "success");
+      } else {
+        showToast(data.message || "确认失败", "error");
+      }
+    } catch (error) {
+      console.error("确认完成失败:", error);
+      showToast("确认失败，请稍后重试", "error");
+    }
+  };
+
+  // 从扣子API返回的数据中提取内容（和对比API使用相同的逻辑）
+  const extractContent = (data: any): any => {
+    if (!data || typeof data !== 'object') {
+      return null;
+    }
+
+    let extractedContent = null;
+    
+    if (data.data && typeof data.data === 'string') {
+      try {
+        const parsed = JSON.parse(data.data);
+        if (parsed.data && typeof parsed.data === 'string') {
+          try {
+            extractedContent = JSON.parse(parsed.data);
+          } catch (e) {
+            extractedContent = parsed.data;
+          }
+        } else {
+          extractedContent = parsed.data || parsed;
+        }
+      } catch (e) {
+        extractedContent = data.data;
+      }
+    } else if (data.data && typeof data.data === 'object' && !Array.isArray(data.data)) {
+      if (data.data.data && typeof data.data.data === 'string') {
+        try {
+          extractedContent = JSON.parse(data.data.data);
+        } catch (e) {
+          extractedContent = data.data.data;
+        }
+      } else {
+        extractedContent = data.data.data || data.data;
+      }
+    } else {
+      extractedContent = data.data;
+    }
+
+    return extractedContent;
+  };
+
+  // 检查提取的内容是否是有效的JSON格式（和对比API使用相同的逻辑）
+  const isValidJsonFormat = (extractedContent: any): boolean => {
+    if (!extractedContent) {
+      return false;
+    }
+
+    if (typeof extractedContent === 'string') {
+      try {
+        const parsedJson = JSON.parse(extractedContent);
+        if (
+          parsedJson &&
+          typeof parsedJson === 'object' &&
+          !Array.isArray(parsedJson) &&
+          (parsedJson.summary !== undefined ||
+           parsedJson.added !== undefined ||
+           parsedJson.modified !== undefined ||
+           parsedJson.deleted !== undefined ||
+           parsedJson.statistics !== undefined ||
+           parsedJson.detailed !== undefined)
+        ) {
+          return true;
+        }
+      } catch (e) {
+        return false;
+      }
+    } else if (typeof extractedContent === 'object' && extractedContent !== null && !Array.isArray(extractedContent)) {
+      if (
+        extractedContent.summary !== undefined ||
+        extractedContent.added !== undefined ||
+        extractedContent.modified !== undefined ||
+        extractedContent.deleted !== undefined ||
+        extractedContent.statistics !== undefined ||
+        extractedContent.detailed !== undefined
+      ) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  // 将历史记录转换为ComparisonRow格式（加载时解析原始数据）
+  const historyRows: ComparisonRow[] = historyRecords.map((record, index) => {
+    // 解析扣子API的原始返回数据
+    let structuredData = null;
+    let markdownContent = null;
+    let rawContent = null;
+    let isJsonFormat = false;
+
+    try {
+      // 从数据库中读取原始扣子API返回数据
+      if (!record.rawCozeResponse) {
+        console.error("历史记录缺少原始扣子数据:", record._id);
+        markdownContent = "";
+      } else {
+        // 解析原始扣子API返回数据
+        let rawCozeData = null;
+        try {
+          rawCozeData = typeof record.rawCozeResponse === 'string' 
+            ? JSON.parse(record.rawCozeResponse) 
+            : record.rawCozeResponse;
+        } catch (e) {
+          console.error("解析原始扣子数据失败:", e);
+          markdownContent = "";
+        }
+
+        if (rawCozeData) {
+          // 使用和对比API相同的解析逻辑
+          const extractedContent = extractContent(rawCozeData);
+
+          if (isValidJsonFormat(extractedContent)) {
+            let parsedJson = extractedContent;
+            if (typeof extractedContent === 'string') {
+              try {
+                parsedJson = JSON.parse(extractedContent);
+              } catch (e) {
+                parsedJson = extractedContent;
+              }
+            }
+            structuredData = parsedJson;
+            isJsonFormat = true;
+            markdownContent = parsedJson.detailed || null;
+          } else {
+            if (typeof extractedContent === 'string') {
+              markdownContent = extractedContent;
+              rawContent = extractedContent;
+            } else if (typeof extractedContent === 'object' && extractedContent !== null) {
+              rawContent = JSON.stringify(extractedContent);
+              markdownContent = rawContent;
+            } else {
+              rawContent = extractedContent;
+              markdownContent = extractedContent;
+            }
+          }
+        }
+      }
+    } catch (parseError) {
+      console.error("解析历史记录数据失败:", parseError);
+      markdownContent = "";
+    }
+
+    // 检查是否有正在对比的状态
+    const comparingState = historyComparingStates.get(record._id);
+
+    return {
+      id: `history_${record._id || index}`,
+      company: record.company,
+      lastYearFile: record.oldFileUrl ? {
+        id: `history_old_${record._id || index}`,
+        name: record.oldFileName,
+        file_url: record.oldFileUrl,
+        url: record.oldFileUrl,
+        uploadStatus: "success" as const,
+      } : null,
+      thisYearFile: record.newFileUrl ? {
+        id: `history_new_${record._id || index}`,
+        name: record.newFileName,
+        file_url: record.newFileUrl,
+        url: record.newFileUrl,
+        uploadStatus: "success" as const,
+      } : null,
+      comparisonStatus: comparingState?.comparisonStatus || ("done" as const),
+      comparisonResult: comparingState?.comparisonResult !== undefined ? comparingState.comparisonResult : (markdownContent || rawContent || record.comparisonResult || ""),
+      comparisonStructured: comparingState?.comparisonStructured !== undefined ? comparingState.comparisonStructured : (structuredData || undefined),
+      isJsonFormat: comparingState?.isJsonFormat !== undefined ? comparingState.isJsonFormat : isJsonFormat,
+      comparisonError: comparingState?.comparisonError,
+      _id: record._id, // 直接使用数据库的_id字段
+      compareTime: comparingState?.compareTime || record.add_time || record.createTime, // 从数据库的add_time字段获取对比时间
+      isVerified: comparingState?.isVerified !== undefined ? comparingState.isVerified : (record.isVerified || false), // 是否已审核确认
+    };
+  });
+
+  // 合并当前对比和历史记录
+  const allComparisons = showHistory ? historyRows : comparisons;
+
   // 过滤对比列表
-  const filteredComparisons = comparisons.filter((row) => {
+  const filteredComparisons = allComparisons.filter((row) => {
     const hasBothFiles = row.thisYearFile && row.lastYearFile;
     const hasThisYearUrl = hasBothFiles && (row.thisYearFile!.file_url || row.thisYearFile!.url);
     const hasLastYearUrl = hasBothFiles && (row.lastYearFile!.file_url || row.lastYearFile!.url);
@@ -1081,6 +1558,10 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         return !hasBothFiles || !hasBothFileIds;
       case "已完成":
         return row.comparisonStatus === "done";
+      case "已审核":
+        return row.comparisonStatus === "done" && row.isVerified === true;
+      case "未审核":
+        return row.comparisonStatus === "done" && (row.isVerified === false || row.isVerified === undefined);
       case "全部状态":
       default:
         return true;
@@ -1095,6 +1576,101 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
   return (
     <Fragment>
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      {/* 切换按钮和分页控件 */}
+      <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-white">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowHistory(false)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              !showHistory
+                ? "bg-slate-900 text-white"
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+          >
+            当前对比
+          </button>
+          <button
+            onClick={() => {
+              setShowHistory(true);
+              loadHistoryRecords(1);
+            }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              showHistory
+                ? "bg-slate-900 text-white"
+                : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+            }`}
+          >
+            历史记录
+          </button>
+          {showHistory && (
+            <button
+              onClick={() => loadHistoryRecords(currentPage)}
+              disabled={isLoadingHistory}
+              className="px-3 py-2 rounded-lg text-sm font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+              title="刷新历史记录"
+            >
+              <svg 
+                className={`w-4 h-4 ${isLoadingHistory ? 'animate-spin' : ''}`} 
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  strokeWidth="2" 
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
+                />
+              </svg>
+              {isLoadingHistory ? "刷新中..." : "刷新"}
+            </button>
+          )}
+        </div>
+
+        {/* 分页控件（仅历史记录显示时） */}
+        {showHistory && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                if (currentPage > 1) {
+                  loadHistoryRecords(currentPage - 1);
+                }
+              }}
+              disabled={currentPage <= 1 || isLoadingHistory}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              上一页
+            </button>
+            <span className="px-4 py-2 text-sm text-slate-600">
+              第 {currentPage} 页 / 共 {totalPages} 页
+            </span>
+            <button
+              onClick={() => {
+                if (currentPage < totalPages) {
+                  loadHistoryRecords(currentPage + 1);
+                }
+              }}
+              disabled={currentPage >= totalPages || isLoadingHistory}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              下一页
+            </button>
+          </div>
+        )}
+      </div>
+
+      {isLoadingHistory && showHistory && (
+        <div className="p-8 text-center">
+          <div className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 mb-2 animate-pulse">
+            <svg className="h-4 w-4 text-blue-600 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+          </div>
+          <p className="text-sm text-slate-500">加载中...</p>
+        </div>
+      )}
+
       <div className="bg-slate-50 px-4 py-3 flex items-center justify-between">
         <div className="text-sm font-semibold">分公司文件对比列表（一行展示）</div>
       </div>
@@ -1104,6 +1680,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         <table className="min-w-full text-left text-sm" style={{ tableLayout: 'fixed' }}>
           <thead className="bg-white text-slate-600">
             <tr className="border-b border-slate-200">
+              <th className="px-4 py-3 font-medium" style={{ width: "160px" }}>对比时间</th>
               <th className="px-4 py-3 font-medium" style={{ width: "120px" }}>分公司</th>
               <th className="px-4 py-3 font-medium" style={{ width: "160px" }}>旧年度文件</th>
               <th className="px-4 py-3 font-medium" style={{ width: "160px" }}>新年度文件</th>
@@ -1116,26 +1693,48 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           <tbody className="divide-y divide-slate-200 bg-white">
             {sortedComparisons.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
-                  暂无文件，请先上传文件
+                <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                  {showHistory ? "暂无历史记录" : "暂无文件，请先上传文件"}
                 </td>
               </tr>
             ) : (
               sortedComparisons.map((row) => {
                 // 格式化分公司名称显示，如果是未知分公司（包含未知_ID格式），只显示"未知"
                 const displayCompany = row.company.startsWith("未知_") ? "未知" : row.company;
+                
+                // 格式化对比时间显示（北京时间）
+                const formatCompareTime = (timeStr?: string) => {
+                  if (!timeStr) return "—";
+                  try {
+                    const date = new Date(timeStr);
+                    // 转换为北京时间（UTC+8）
+                    const beijingTime = new Date(date.getTime() + (8 * 60 * 60 * 1000));
+                    const year = beijingTime.getUTCFullYear();
+                    const month = String(beijingTime.getUTCMonth() + 1).padStart(2, '0');
+                    const day = String(beijingTime.getUTCDate()).padStart(2, '0');
+                    const hours = String(beijingTime.getUTCHours()).padStart(2, '0');
+                    const minutes = String(beijingTime.getUTCMinutes()).padStart(2, '0');
+                    return `${year}-${month}-${day} ${hours}:${minutes}`;
+                  } catch (e) {
+                    return "—";
+                  }
+                };
+                
                 return (
                   <Fragment key={row.id}>
-                    <tr className="hover:bg-slate-50">
+                    <tr className={`hover:bg-slate-50 ${row.isVerified ? 'bg-emerald-50/50 border-l-4 border-l-emerald-500' : ''}`}>
+                      <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
+                        {formatCompareTime(row.compareTime)}
+                      </td>
                       <td className="px-4 py-3 font-medium whitespace-nowrap">{displayCompany}</td>
 
                     <td className="px-4 py-3" style={{ width: "160px" }}>
                       <FileDisplay
                         file={row.lastYearFile}
                         type="lastYear"
-                        onDelete={() => row.lastYearFile && handleFileDelete(row.lastYearFile.id)}
+                        onDelete={showHistory ? undefined : () => row.lastYearFile && handleFileDelete(row.lastYearFile.id)}
                         onPreview={() => row.lastYearFile && handleFilePreview(row.lastYearFile)}
-                        onUpload={() => handleFileUpload(row.id, "lastYear")}
+                        onUpload={showHistory ? undefined : () => handleFileUpload(row.id, "lastYear")}
                       />
                     </td>
 
@@ -1143,31 +1742,43 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                       <FileDisplay
                         file={row.thisYearFile}
                         type="thisYear"
-                        onDelete={() => row.thisYearFile && handleFileDelete(row.thisYearFile.id)}
+                        onDelete={showHistory ? undefined : () => row.thisYearFile && handleFileDelete(row.thisYearFile.id)}
                         onPreview={() => row.thisYearFile && handleFilePreview(row.thisYearFile)}
-                        onUpload={() => handleFileUpload(row.id, "thisYear")}
+                        onUpload={showHistory ? undefined : () => handleFileUpload(row.id, "thisYear")}
                       />
                     </td>
 
                     <td className="px-4 py-3">
-                      {row.comparisonStatus === "none" && (
-                        <span className="text-xs text-slate-500">未对比</span>
-                      )}
-                      {row.comparisonStatus === "comparing" && (
-                        <span className="inline-flex items-center gap-1 text-xs text-blue-600">
-                          <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
-                          对比中
-                        </span>
-                      )}
-                      {row.comparisonStatus === "done" && (
-                        <span className="text-xs text-emerald-600">已完成</span>
-                      )}
-                      {row.comparisonStatus === "error" && (
-                        <span className="text-xs text-red-600">失败</span>
-                      )}
+                      <div className="flex flex-col items-center gap-1">
+                        {row.comparisonStatus === "none" && (
+                          <span className="text-xs text-slate-500">未对比</span>
+                        )}
+                        {row.comparisonStatus === "comparing" && (
+                          <span className="inline-flex items-center gap-1 text-xs text-blue-600">
+                            <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            对比中
+                          </span>
+                        )}
+                        {row.comparisonStatus === "done" && (
+                          <>
+                            <span className="text-xs text-emerald-600">已完成</span>
+                            {row.isVerified && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">
+                                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                </svg>
+                                已审核
+                              </span>
+                            )}
+                          </>
+                        )}
+                        {row.comparisonStatus === "error" && (
+                          <span className="text-xs text-red-600">失败</span>
+                        )}
+                      </div>
                     </td>
 
                     <td className="px-4 py-3" style={{ whiteSpace: 'normal' }}>
@@ -1196,7 +1807,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                     </td>
 
                     <td className="px-4 py-3 text-right whitespace-nowrap">
-                      <div className="inline-flex gap-2">
+                      <div className="flex flex-col gap-2">
                         {(() => {
                           // 调试日志：检查文件状态
                           const hasThisYear = !!row.thisYearFile;
@@ -1221,30 +1832,55 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                           
                           return hasThisYear && hasLastYear && hasThisYearUrl && hasLastYearUrl ? (
                             <>
-                              <button
-                                onClick={() => handleCompare(row)}
-                                disabled={row.comparisonStatus === "comparing"}
-                                className="rounded-xl bg-slate-700 px-3 py-1.5 text-xs text-white hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                              >
-                                政策对比
-                              </button>
-                              <button
-                                onClick={() => showToast("该功能正在开发中", "info")}
-                                className="rounded-xl border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100"
-                              >
-                                佣金对比
-                              </button>
-                                 <SummaryTooltip
-                                   summary={row.comparisonStructured?.summary}
-                                   rowId={row.id}
-                                   onButtonClick={() => {
-                                     if (row.comparisonStructured && row.isJsonFormat) {
-                                       toggleCards(row.id);
-                                     } else {
-                                       setDetailModal({ open: true, row });
-                                     }
-                                   }}
-                                 />
+                              {/* 第一行：政策对比、佣金对比 */}
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => handleCompare(row)}
+                                  disabled={row.comparisonStatus === "comparing"}
+                                  className="rounded-xl bg-slate-700 px-3 py-1.5 text-xs text-white hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                  政策对比
+                                </button>
+                                <button
+                                  onClick={() => showToast("该功能正在开发中", "info")}
+                                  className="rounded-xl border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100"
+                                >
+                                  佣金对比
+                                </button>
+                              </div>
+                              {/* 第二行：查看详情、确认完成 */}
+                              <div className="flex gap-2">
+                                <SummaryTooltip
+                                  summary={row.comparisonStructured?.summary}
+                                  rowId={row.id}
+                                  onButtonClick={() => {
+                                    if (row.comparisonStructured && row.isJsonFormat) {
+                                      toggleCards(row.id);
+                                    } else {
+                                      setDetailModal({ open: true, row });
+                                    }
+                                  }}
+                                />
+                                {row.comparisonStatus === "done" && !row.isVerified && (
+                                  <button
+                                    onClick={() => handleVerify(row)}
+                                    className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-700 flex items-center gap-1"
+                                  >
+                                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    确认完成
+                                  </button>
+                                )}
+                                {row.comparisonStatus === "done" && row.isVerified && (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1.5 text-xs text-emerald-700">
+                                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                    已确认
+                                  </span>
+                                )}
+                              </div>
                             </>
                           ) : (
                             <button
@@ -1305,8 +1941,10 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
             const canCompare = hasThisYear && hasLastYear && hasThisYearUrl && hasLastYearUrl;
 
             return (
-              <div key={row.id} className="p-4 space-y-3">
-                <div className="font-semibold text-sm">{displayCompany}</div>
+              <div key={row.id} className={`p-4 space-y-3 ${row.isVerified ? 'bg-emerald-50/50 border-l-4 border-l-emerald-500' : ''}`}>
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold text-sm">{displayCompany}</div>
+                </div>
                 
                 <div className="space-y-2">
                   <div>
@@ -1334,24 +1972,36 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
 
                 <div>
                   <div className="text-xs text-slate-500 mb-1">对比状态</div>
-                  {row.comparisonStatus === "none" && (
-                    <span className="text-xs text-slate-500">未对比</span>
-                  )}
-                  {row.comparisonStatus === "comparing" && (
-                    <span className="inline-flex items-center gap-1 text-xs text-blue-600">
-                      <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      对比中
-                    </span>
-                  )}
-                  {row.comparisonStatus === "done" && (
-                    <span className="text-xs text-emerald-600">已完成</span>
-                  )}
-                  {row.comparisonStatus === "error" && (
-                    <span className="text-xs text-red-600">失败</span>
-                  )}
+                  <div className="flex flex-col items-center gap-1">
+                    {row.comparisonStatus === "none" && (
+                      <span className="text-xs text-slate-500">未对比</span>
+                    )}
+                    {row.comparisonStatus === "comparing" && (
+                      <span className="inline-flex items-center gap-1 text-xs text-blue-600">
+                        <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        对比中
+                      </span>
+                    )}
+                    {row.comparisonStatus === "done" && (
+                      <>
+                        <span className="text-xs text-emerald-600">已完成</span>
+                        {row.isVerified && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">
+                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                            </svg>
+                            已审核
+                          </span>
+                        )}
+                      </>
+                    )}
+                    {row.comparisonStatus === "error" && (
+                      <span className="text-xs text-red-600">失败</span>
+                    )}
+                  </div>
                 </div>
 
                 {row.comparisonStatus === "done" && (
@@ -1378,35 +2028,60 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
 
                 <div>
                   <div className="text-xs text-slate-500 mb-1">操作</div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-col gap-2">
                     {canCompare ? (
                       <>
-                        <button
-                          onClick={() => handleCompare(row)}
-                          disabled={row.comparisonStatus === "comparing"}
-                          className="rounded-xl bg-slate-700 px-3 py-1.5 text-xs text-white hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          政策对比
-                        </button>
-                        <button
-                          onClick={() => showToast("该功能正在开发中", "info")}
-                          className="rounded-xl border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100"
-                        >
-                          佣金对比
-                        </button>
-                        {row.comparisonStructured && row.isJsonFormat && (
-                          <SummaryTooltip
-                            summary={row.comparisonStructured?.summary}
-                            rowId={row.id}
-                            onButtonClick={() => {
-                              if (row.comparisonStructured && row.isJsonFormat) {
-                                toggleCards(row.id);
-                              } else {
-                                setDetailModal({ open: true, row });
-                              }
-                            }}
-                          />
-                        )}
+                        {/* 第一行：政策对比、佣金对比 */}
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleCompare(row)}
+                            disabled={row.comparisonStatus === "comparing"}
+                            className="rounded-xl bg-slate-700 px-3 py-1.5 text-xs text-white hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            政策对比
+                          </button>
+                          <button
+                            onClick={() => showToast("该功能正在开发中", "info")}
+                            className="rounded-xl border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-100"
+                          >
+                            佣金对比
+                          </button>
+                        </div>
+                        {/* 第二行：查看详情、确认完成 */}
+                        <div className="flex gap-2">
+                          {row.comparisonStructured && row.isJsonFormat && (
+                            <SummaryTooltip
+                              summary={row.comparisonStructured?.summary}
+                              rowId={row.id}
+                              onButtonClick={() => {
+                                if (row.comparisonStructured && row.isJsonFormat) {
+                                  toggleCards(row.id);
+                                } else {
+                                  setDetailModal({ open: true, row });
+                                }
+                              }}
+                            />
+                          )}
+                          {row.comparisonStatus === "done" && !row.isVerified && (
+                            <button
+                              onClick={() => handleVerify(row)}
+                              className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs text-white hover:bg-emerald-700 flex items-center gap-1"
+                            >
+                              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                              </svg>
+                              确认完成
+                            </button>
+                          )}
+                          {row.comparisonStatus === "done" && row.isVerified && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-3 py-1.5 text-xs text-emerald-700">
+                              <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                              </svg>
+                              已确认
+                            </span>
+                          )}
+                        </div>
                       </>
                     ) : (
                       <button
@@ -1516,6 +2191,124 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       isOpen={detailModal.open}
       onClose={() => setDetailModal({ open: false, row: null })}
     />
+
+    {/* 对比模式选择对话框 */}
+    {compareModeModal.open && compareModeModal.row && createPortal(
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 relative">
+          {/* 关闭按钮 */}
+          <button
+            onClick={() => setCompareModeModal({ open: false, row: null })}
+            className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+
+          {/* 对话框内容 */}
+          <div className="p-6">
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">请选择对比模式</h3>
+            <p className="text-sm text-slate-600 mb-6">
+              分公司：{compareModeModal.row.company}
+            </p>
+
+            <div className="space-y-3">
+              {/* 覆盖当前记录 */}
+              <button
+                onClick={async () => {
+                  setCompareModeModal({ open: false, row: null });
+                  await executeCompare(compareModeModal.row!, "overwrite");
+                }}
+                className="w-full px-6 py-5 rounded-2xl bg-blue-500 hover:bg-blue-600 active:bg-blue-700 text-white transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] flex flex-col items-center justify-center text-center relative overflow-hidden group"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-400/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                <div className="relative z-10">
+                  <div className="font-bold text-lg mb-1.5">覆盖当前记录</div>
+                  <div className="text-sm text-blue-50 leading-relaxed">
+                    更新当前记录
+                  </div>
+                </div>
+              </button>
+
+              {/* 创建新的记录 */}
+              <button
+                onClick={async () => {
+                  setCompareModeModal({ open: false, row: null });
+                  await executeCompare(compareModeModal.row!, "create");
+                }}
+                className="w-full px-6 py-5 rounded-2xl bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-[1.02] active:scale-[0.98] flex flex-col items-center justify-center text-center relative overflow-hidden group"
+              >
+                <div className="absolute inset-0 bg-gradient-to-r from-emerald-400/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                <div className="relative z-10">
+                  <div className="font-bold text-lg mb-1.5">创建新的记录</div>
+                  <div className="text-sm text-emerald-50 leading-relaxed">
+                    {showHistory 
+                      ? "跳转并创建新条目"
+                      : "创建新的对比记录"}
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
+
+    {/* 确认完成对话框 */}
+    {verifyModal.open && verifyModal.row && createPortal(
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 relative">
+          {/* 关闭按钮 */}
+          <button
+            onClick={() => setVerifyModal({ open: false, row: null })}
+            className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+
+          {/* 对话框内容 */}
+          <div className="p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex-shrink-0 w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center">
+                <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">确认完成审核</h3>
+                <p className="text-sm text-slate-600 mt-1">
+                  分公司：{verifyModal.row.company}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-sm text-slate-600 mb-6">
+              确认要将此对比记录标记为已审核完成吗？此操作将更新数据库中的审核状态。
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setVerifyModal({ open: false, row: null })}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+              >
+                取消
+              </button>
+              <button
+                onClick={confirmVerify}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+              >
+                确认完成
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>,
+      document.body
+    )}
     </Fragment>
   );
 }

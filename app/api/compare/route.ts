@@ -360,6 +360,7 @@ export async function POST(request: NextRequest) {
       execute_id: data.execute_id,
       debug_url: data.debug_url,
       raw_data: data.data, // 保留原始数据用于调试
+      rawCozeResponse: data, // 保存完整的扣子API原始返回对象（用于保存到数据库）
     };
     
     console.log("扣子工作流API - 处理后的返回数据:", {

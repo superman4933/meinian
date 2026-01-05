@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@cloudbase/node-sdk": "^2.11.0",
     "docx": "^9.5.1",
     "html2canvas": "^1.4.1",
     "jspdf": "^3.0.4",

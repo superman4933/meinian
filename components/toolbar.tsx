@@ -63,19 +63,25 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
       const comparePromises = readyComparisons.map(async (row) => {
         updateComparison(row.id, { comparisonStatus: "comparing" });
 
+        const oldFileUrl = row.lastYearFile!.file_url || row.lastYearFile!.url;
+        const newFileUrl = row.thisYearFile!.file_url || row.thisYearFile!.url;
+        const oldFileName = row.lastYearFile!.name || "";
+        const newFileName = row.thisYearFile!.name || "";
+
+        if (!oldFileName || !newFileName) {
+          updateComparison(row.id, {
+            comparisonStatus: "error",
+            comparisonError: "文件名称信息缺失",
+          });
+          completedCount++;
+          setCompareProgress({ current: completedCount, total: readyComparisons.length });
+          return;
+        }
+
         try {
           // 获取token并添加到请求头
           const token = getCozeTokenClient();
           
-          const oldFileUrl = row.lastYearFile!.file_url || row.lastYearFile!.url;
-          const newFileUrl = row.thisYearFile!.file_url || row.thisYearFile!.url;
-          const oldFileName = row.lastYearFile!.name || "";
-          const newFileName = row.thisYearFile!.name || "";
-
-          if (!oldFileName || !newFileName) {
-            throw new Error("文件名称信息缺失");
-          }
-
           const response = await fetch("/api/compare", {
             method: "POST",
             headers: {
@@ -92,46 +98,19 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
 
           const data = await response.json();
 
-          // 记录批量对比接口的原始返回
-          if (process.env.NODE_ENV === 'development') {
-            console.log(`政策一键对比 [${row.company}] - 接口原始返回:`, {
-            rowId: row.id,
-            company: row.company,
-            file1_url: oldFileUrl,
-            file2_url: newFileUrl,
-            responseStatus: response.status,
-            responseOk: response.ok,
-            rawResponse: JSON.stringify(data, null, 2),
-            success: data.success,
-            hasData: !!data.data,
-            executeId: data.execute_id,
-            debugUrl: data.debug_url,
-            });
-          }
-
           if (!response.ok || !data.success) {
-            if (process.env.NODE_ENV === 'development') {
-              console.error(`政策一键对比失败 [${row.company}]:`, {
-              rowId: row.id,
-              error: data.message || "对比失败",
-              fullError: data,
-              });
-            }
             throw new Error(data.message || "对比失败");
           }
 
-          console.log(`政策一键对比成功 [${row.company}]:`, {
-            rowId: row.id,
-            company: row.company,
-            resultData: data.data,
-            markdown: data.markdown,
-            structured: data.structured,
-            isJsonFormat: data.isJsonFormat,
-            resultType: typeof data.data,
-          });
-
-          // 保存结果（可能是结构化数据或原始内容）
+          // 保存结果
           const resultContent = data.markdown || data.data || "对比完成";
+
+          // 获取北京时间（UTC+8）
+          const getBeijingTime = () => {
+            const now = new Date();
+            const beijingTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // UTC+8
+            return beijingTime.toISOString();
+          };
 
           updateComparison(row.id, {
             comparisonStatus: "done",
@@ -139,22 +118,50 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
             comparisonStructured: data.structured || undefined,
             isJsonFormat: data.isJsonFormat || false,
             comparisonError: undefined,
+            compareTime: getBeijingTime(), // 当前对比时间（北京时间）
           });
-          
-          // 更新进度
-          completedCount++;
-          setCompareProgress({ current: completedCount, total: readyComparisons.length });
+
+          // 对比完成后，保存原始扣子API返回数据到数据库
+          try {
+            // 保存扣子API的完整原始返回数据（从API返回的rawCozeResponse字段获取）
+            const rawCozeData = data.rawCozeResponse || data;
+            
+            const saveResponse = await fetch("/api/policy-compare-records", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                company: row.company,
+                oldFileName: oldFileName,
+                newFileName: newFileName,
+                oldFileUrl: oldFileUrl,
+                newFileUrl: newFileUrl,
+                status: "done",
+                // 保存扣子API的原始返回数据（不解析，保持原始格式）
+                rawCozeResponse: rawCozeData,
+              }),
+            });
+
+            const saveData = await saveResponse.json();
+            if (saveData.success && saveData._id) {
+              // 保存数据库的_id到ComparisonRow中，用于后续更新操作
+              updateComparison(row.id, { _id: saveData._id });
+            }
+          } catch (saveError) {
+            console.error(`保存对比结果到数据库失败 [${row.company}]:`, saveError);
+          }
         } catch (error: any) {
           updateComparison(row.id, {
             comparisonStatus: "error",
             comparisonError: error.message || "对比失败",
             comparisonResult: undefined,
           });
-          
-          // 更新进度（即使失败也计入）
-          completedCount++;
-          setCompareProgress({ current: completedCount, total: readyComparisons.length });
         }
+        
+        // 更新进度
+        completedCount++;
+        setCompareProgress({ current: completedCount, total: readyComparisons.length });
       });
 
       await Promise.all(comparePromises);
@@ -205,6 +212,8 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
             <option value="可比对">可比对</option>
             <option value="缺文件">缺文件</option>
             <option value="已完成">已完成</option>
+            <option value="已审核">已审核</option>
+            <option value="未审核">未审核</option>
           </select>
         </div>
 
