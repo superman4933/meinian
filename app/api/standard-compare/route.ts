@@ -315,7 +315,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const result = {
+    const result: any = {
       success: true,
       data: rawContent || structuredData || data.data || data,
       structured: structuredData,
