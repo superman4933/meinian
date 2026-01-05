@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
     };
 
     // 使用SDK插入记录
-    const result = await db.collection(COLLECTION_NAME).add(record);
+    const result: any = await db.collection(COLLECTION_NAME).add(record);
 
     // 检查是否有错误（根据文档，应该检查 typeof result.code === 'string'）
     if (typeof result.code === 'string') {
@@ -138,7 +138,7 @@ export async function DELETE(request: NextRequest) {
     const db = getDatabase();
 
     // 使用SDK删除记录（通过_id）
-    const result = await db
+    const result: any = await db
       .collection(COLLECTION_NAME)
       .doc(_id)
       .remove();
@@ -263,7 +263,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     // 使用SDK更新记录（通过数据库的_id）
-    const result = await db
+    const result: any = await db
       .collection(COLLECTION_NAME)
       .doc(_id)
       .update(updateData);
@@ -322,7 +322,7 @@ export async function GET(request: NextRequest) {
 
     if (recordId) {
       // 查询单个记录（通过数据库的_id）
-      const result = await db
+      const result: any = await db
         .collection(COLLECTION_NAME)
         .doc(recordId) // recordId就是数据库的_id
         .get();
@@ -363,7 +363,7 @@ export async function GET(request: NextRequest) {
         .skip(skip)
         .limit(pageSize);
 
-      const result = await query.get();
+      const result: any = await query.get();
 
       if (typeof result.code === 'string') {
         return NextResponse.json(
@@ -386,7 +386,7 @@ export async function GET(request: NextRequest) {
       
       // 获取总数（通过查询所有记录，但只取第一个字段来获取总数）
       // 由于SDK限制，我们使用一个技巧：查询所有记录但只获取_id字段
-      const allRecords = await countQuery.field({ _id: true }).get();
+      const allRecords: any = await countQuery.field({ _id: true }).get();
       
       let total = 0;
       if (typeof allRecords.code === 'string') {

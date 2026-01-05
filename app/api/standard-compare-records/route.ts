@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
     };
 
     // 使用SDK插入记录
-    const result = await db.collection(COLLECTION_NAME).add(record);
+    const result: any = await db.collection(COLLECTION_NAME).add(record);
 
     // 检查是否有错误（根据文档，应该检查 typeof result.code === 'string'）
     if (typeof result.code === 'string') {
@@ -136,7 +136,7 @@ export async function DELETE(request: NextRequest) {
     const db = getDatabase();
 
     // 使用SDK删除记录（通过数据库的_id）
-    const result = await db
+    const result: any = await db
       .collection(COLLECTION_NAME)
       .doc(_id)
       .remove();
@@ -251,7 +251,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     // 使用SDK更新记录（通过数据库的_id）
-    const result = await db
+    const result: any = await db
       .collection(COLLECTION_NAME)
       .doc(_id)
       .update(updateData);
@@ -310,7 +310,7 @@ export async function GET(request: NextRequest) {
 
     if (_id) {
       // 查询单个记录（通过数据库的_id）
-      const result = await db
+      const result: any = await db
         .collection(COLLECTION_NAME)
         .doc(_id)
         .get();
@@ -344,7 +344,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 获取总数
-    const countResult = await query.count();
+    const countResult: any = await query.count();
     if (typeof countResult.code === 'string') {
       console.error("查询记录总数失败:", countResult);
       return NextResponse.json(
@@ -359,7 +359,7 @@ export async function GET(request: NextRequest) {
     const total = countResult.total;
 
     // 查询记录（按时间倒序）
-    const records = await query
+    const records: any = await query
       .orderBy("add_time", "desc")
       .skip((page - 1) * pageSize)
       .limit(pageSize)

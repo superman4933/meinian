@@ -374,7 +374,7 @@ export async function POST(request: NextRequest) {
             standardItemsLength: Array.isArray(structuredData) ? structuredData.length : 0,
           });
 
-          const updateResult = await db.collection(COLLECTION_NAME).doc(recordId).update(updateData);
+          const updateResult: any = await db.collection(COLLECTION_NAME).doc(recordId).update(updateData);
           
           console.log("更新结果:", updateResult);
           
@@ -416,7 +416,7 @@ export async function POST(request: NextRequest) {
             add_time: record.add_time,
           });
 
-          const saveResult = await db.collection(COLLECTION_NAME).add(record);
+          const saveResult: any = await db.collection(COLLECTION_NAME).add(record);
           
           console.log("保存结果:", saveResult);
           
