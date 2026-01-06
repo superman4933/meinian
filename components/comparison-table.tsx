@@ -3213,7 +3213,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       row={detailModal.row}
       isOpen={detailModal.open}
       onClose={() => setDetailModal({ open: false, row: null })}
-      onUpdate={(updatedRow) => {
+      onUpdate={async (updatedRow) => {
         // 更新 detailModal 中的 row
         setDetailModal(prev => ({ ...prev, row: updatedRow }));
         // 更新 comparisons 数组中的对应项
@@ -3223,6 +3223,12 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
             comparisonStructured: updatedRow.comparisonStructured,
             isJsonFormat: updatedRow.isJsonFormat,
           });
+        }
+        
+        // 如果当前显示历史记录视图，刷新历史记录列表
+        if (showHistory) {
+          console.log("🔵 [编辑保存] 检测到历史记录视图，刷新历史记录列表");
+          await loadHistoryRecords(currentPage);
         }
       }}
     />
