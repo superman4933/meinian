@@ -203,18 +203,23 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          <select 
-            value={filterStatus}
-            onChange={(e) => handleFilterChange(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-          >
-            <option value="全部状态">全部状态</option>
-            <option value="可比对">可比对</option>
-            <option value="缺文件">缺文件</option>
-            <option value="已完成">已完成</option>
-            <option value="已审核">已审核</option>
-            <option value="未审核">未审核</option>
-          </select>
+          <div className="flex flex-col gap-1">
+            <select 
+              value={filterStatus}
+              onChange={(e) => handleFilterChange(e.target.value)}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+            >
+              <option value="全部状态">全部状态</option>
+              <option value="可比对">可比对</option>
+              <option value="缺文件">缺文件</option>
+              <option value="已完成">已完成</option>
+              <option value="已审核">已审核</option>
+              <option value="未审核">未审核</option>
+            </select>
+            <div className="text-xs text-slate-400 px-1">
+              切换筛选条件将清空已选中的项
+            </div>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">

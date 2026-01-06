@@ -213,6 +213,11 @@ export default function StandardComparePage() {
         setSelectedIds(new Set());
     }, [showHistory]);
 
+    // 筛选状态改变时清空选中状态
+    useEffect(() => {
+        setSelectedIds(new Set());
+    }, [filterStatus]);
+
     const handleLoginSuccess = (loggedInUsername: string) => {
         setUsername(loggedInUsername);
         setIsLoggedIn(true);
@@ -1686,15 +1691,20 @@ export default function StandardComparePage() {
                         )}
                         {/* 筛选（仅历史记录显示） */}
                         {showHistory && (
-                            <select
-                                value={filterStatus}
-                                onChange={(e) => handleFilterChange(e.target.value)}
-                                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                            >
-                                <option value="全部状态">全部状态</option>
-                                <option value="已审核">已审核</option>
-                                <option value="未审核">未审核</option>
-                            </select>
+                            <div className="flex flex-col gap-1">
+                                <select
+                                    value={filterStatus}
+                                    onChange={(e) => handleFilterChange(e.target.value)}
+                                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                                >
+                                    <option value="全部状态">全部状态</option>
+                                    <option value="已审核">已审核</option>
+                                    <option value="未审核">未审核</option>
+                                </select>
+                                <div className="text-xs text-slate-400 px-1">
+                                    切换筛选条件将清空已选中的项
+                                </div>
+                            </div>
                         )}
                         {!showHistory && (
                             <div className="text-sm text-slate-500">

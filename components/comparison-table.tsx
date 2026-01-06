@@ -1570,6 +1570,16 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
   // 合并当前对比和历史记录
   const allComparisons = showHistory ? historyRows : comparisons;
 
+  // 筛选状态改变时清空选中状态
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [filterStatus]);
+
+  // 切换显示历史记录时清空选中状态
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [showHistory]);
+
   // 切换单个项的选中状态
   const toggleSelect = (rowId: string) => {
     setSelectedIds((prev) => {
