@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const GUGUDATA_API_URL = "https://api.gugudata.com/imagerecognition/markdown2pdf";
-const APPKEY = "TRIALCGMKBXCJQAMAT5LKXLQPGS7J9W2K5KH2";
+const APPKEY = "2YDVVZVUTAPE73L7F7LP3ASCK9GJQ46K";
 
 export async function POST(request: NextRequest) {
   try {
