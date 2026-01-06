@@ -724,58 +724,225 @@ function DetailModal({
 
     setIsSaving(true);
     try {
+      console.log("🔵 [编辑保存] 开始保存，记录ID:", row._id);
+      console.log("🔵 [编辑保存] 编辑内容长度:", editingContent?.length || 0);
+      
       // 从数据库获取原始 rawCozeResponse 数据
       let rawCozeData = null;
+      const username = getCurrentUsername();
+      if (!username) {
+        console.error("❌ [编辑保存] 未登录");
+        showToast("请先登录", "error");
+        setIsSaving(false);
+        return;
+      }
+      
+      console.log("🔵 [编辑保存] 当前用户名:", username);
+      
       try {
-        const username = getCurrentUsername();
-        if (!username) {
-          showToast("请先登录", "error");
-          return;
-        }
+        console.log("🔵 [编辑保存] 开始获取数据库记录...");
         const recordResponse = await fetch(`/api/policy-compare-records?id=${row._id}&username=${encodeURIComponent(username)}`);
         const recordData = await recordResponse.json();
+        
+        console.log("🔵 [编辑保存] 获取记录响应:", {
+          success: recordData.success,
+          hasData: !!recordData.data,
+          hasRawCozeResponse: !!(recordData.data?.rawCozeResponse),
+        });
+        
         if (recordData.success && recordData.data && recordData.data.rawCozeResponse) {
           try {
             rawCozeData = typeof recordData.data.rawCozeResponse === 'string' 
               ? JSON.parse(recordData.data.rawCozeResponse) 
               : recordData.data.rawCozeResponse;
+            console.log("🔵 [编辑保存] 成功解析原始数据");
+            console.log("🔵 [编辑保存] 第一层数据结构:", {
+              hasData: !!rawCozeData?.data,
+              dataType: typeof rawCozeData?.data,
+              dataKeys: rawCozeData ? Object.keys(rawCozeData) : [],
+            });
+            
+            // 如果 data 是字符串，需要解析（第一层 data）
+            if (rawCozeData?.data && typeof rawCozeData.data === 'string') {
+              try {
+                rawCozeData.data = JSON.parse(rawCozeData.data);
+                console.log("🔵 [编辑保存] 成功解析第一层 data 字段（JSON字符串）");
+                console.log("🔵 [编辑保存] 第一层 data 解析后的结构:", {
+                  hasData: !!rawCozeData?.data?.data,
+                  dataDataType: typeof rawCozeData?.data?.data,
+                  dataKeys: rawCozeData?.data ? Object.keys(rawCozeData.data) : [],
+                });
+                
+                // 如果 data.data 也是字符串，需要再次解析（第二层 data）
+                if (rawCozeData?.data?.data && typeof rawCozeData.data.data === 'string') {
+                  try {
+                    rawCozeData.data.data = JSON.parse(rawCozeData.data.data);
+                    console.log("🔵 [编辑保存] 成功解析第二层 data.data 字段（JSON字符串）");
+                    console.log("🔵 [编辑保存] 第二层 data.data 解析后的结构:", {
+                      hasDetailed: !!rawCozeData?.data?.data?.detailed,
+                      dataDataKeys: rawCozeData?.data?.data ? Object.keys(rawCozeData.data.data) : [],
+                    });
+                  } catch (e) {
+                    console.error("❌ [编辑保存] 解析第二层 data.data 字段失败:", e);
+                    console.error("❌ [编辑保存] data.data 字段内容:", rawCozeData.data.data?.substring(0, 200));
+                  }
+                }
+              } catch (e) {
+                console.error("❌ [编辑保存] 解析第一层 data 字段失败:", e);
+                console.error("❌ [编辑保存] data 字段内容:", rawCozeData.data?.substring(0, 200));
+              }
+            }
           } catch (e) {
-            console.error("解析原始扣子数据失败:", e);
+            console.error("❌ [编辑保存] 解析原始扣子数据失败:", e);
           }
+        } else {
+          console.warn("⚠️ [编辑保存] 未获取到原始数据，将使用现有数据构建");
         }
       } catch (e) {
-        console.error("获取数据库记录失败:", e);
+        console.error("❌ [编辑保存] 获取数据库记录失败:", e);
       }
 
-      // 如果没有原始数据，尝试从 comparisonStructured 构建
-      if (!rawCozeData && row.comparisonStructured) {
-        rawCozeData = {
-          structured: {
-            ...row.comparisonStructured,
-            detailed: editingContent,
-          },
-        };
-      } else if (rawCozeData) {
-        // 更新 detailed 字段
-        if (!rawCozeData.structured) {
-          rawCozeData.structured = {};
+      // 更新 rawCozeResponse.data.data.detailed 字段
+      // 注意：有两个 data 层级，都需要解析
+      if (rawCozeData) {
+        console.log("🔵 [编辑保存] 更新现有数据的 data.data.detailed 字段");
+        console.log("🔵 [编辑保存] rawCozeData 类型:", typeof rawCozeData);
+        console.log("🔵 [编辑保存] rawCozeData.data 类型:", typeof rawCozeData?.data);
+        
+        let firstDataObj = null;
+        
+        // 第一步：解析第一层 data（rawCozeData.data）
+        if (!rawCozeData.data) {
+          console.log("🔵 [编辑保存] 第一层 data 不存在，创建新对象");
+          firstDataObj = {};
+        } else if (typeof rawCozeData.data === 'string') {
+          // 如果第一层 data 是字符串，需要解析
+          console.log("🔵 [编辑保存] 第一层 data 是字符串，开始解析");
+          try {
+            firstDataObj = JSON.parse(rawCozeData.data);
+            console.log("🔵 [编辑保存] 成功解析第一层 data 字符串");
+            console.log("🔵 [编辑保存] 第一层 data keys:", firstDataObj ? Object.keys(firstDataObj) : []);
+          } catch (e) {
+            console.error("❌ [编辑保存] 解析第一层 data 字符串失败:", e);
+            console.error("❌ [编辑保存] 第一层 data 字符串内容:", rawCozeData.data.substring(0, 200));
+            // 如果解析失败，创建新对象
+            firstDataObj = {};
+          }
+        } else if (typeof rawCozeData.data === 'object' && rawCozeData.data !== null) {
+          // 如果第一层 data 已经是对象，直接使用
+          console.log("🔵 [编辑保存] 第一层 data 已经是对象");
+          firstDataObj = rawCozeData.data;
+        } else {
+          console.log("🔵 [编辑保存] 第一层 data 类型异常，创建新对象");
+          firstDataObj = {};
         }
-        rawCozeData.structured.detailed = editingContent;
+        
+        // 第二步：解析第二层 data（firstDataObj.data）
+        let secondDataObj = null;
+        if (!firstDataObj.data) {
+          console.log("🔵 [编辑保存] 第二层 data 不存在，创建新对象");
+          secondDataObj = {};
+        } else if (typeof firstDataObj.data === 'string') {
+          // 如果第二层 data 是字符串，需要解析
+          console.log("🔵 [编辑保存] 第二层 data 是字符串，开始解析");
+          try {
+            secondDataObj = JSON.parse(firstDataObj.data);
+            console.log("🔵 [编辑保存] 成功解析第二层 data 字符串");
+            console.log("🔵 [编辑保存] 第二层 data keys:", secondDataObj ? Object.keys(secondDataObj) : []);
+          } catch (e) {
+            console.error("❌ [编辑保存] 解析第二层 data 字符串失败:", e);
+            console.error("❌ [编辑保存] 第二层 data 字符串内容:", firstDataObj.data.substring(0, 200));
+            // 如果解析失败，创建新对象
+            secondDataObj = {};
+          }
+        } else if (typeof firstDataObj.data === 'object' && firstDataObj.data !== null) {
+          // 如果第二层 data 已经是对象，直接使用
+          console.log("🔵 [编辑保存] 第二层 data 已经是对象");
+          secondDataObj = firstDataObj.data;
+        } else {
+          console.log("🔵 [编辑保存] 第二层 data 类型异常，创建新对象");
+          secondDataObj = {};
+        }
+        
+        // 第三步：更新 detailed 字段
+        secondDataObj.detailed = editingContent;
+        console.log("🔵 [编辑保存] 已更新 data.data.detailed 字段，长度:", editingContent.length);
+        console.log("🔵 [编辑保存] 更新后的第二层 data 结构:", {
+          keys: Object.keys(secondDataObj),
+          hasDetailed: !!secondDataObj.detailed,
+        });
+        
+        // 第四步：将第二层 data 序列化回字符串
+        firstDataObj.data = JSON.stringify(secondDataObj);
+        console.log("🔵 [编辑保存] 第二层 data 已序列化为字符串，长度:", firstDataObj.data.length);
+        
+        // 第五步：将第一层 data 序列化回字符串（因为数据库中存储的是字符串格式）
+        rawCozeData.data = JSON.stringify(firstDataObj);
+        console.log("🔵 [编辑保存] 第一层 data 已序列化为字符串，长度:", rawCozeData.data.length);
       } else {
-        // 如果都没有，创建一个新的结构
+        // 如果没有原始数据，创建一个新的结构（两层 data）
+        console.log("🔵 [编辑保存] 创建全新的数据结构（两层 data）");
+        const secondDataObj = {
+          detailed: editingContent,
+        };
+        const firstDataObj = {
+          data: JSON.stringify(secondDataObj), // 第二层 data 存储为 JSON 字符串
+        };
         rawCozeData = {
-          structured: {
-            detailed: editingContent,
-          },
+          data: JSON.stringify(firstDataObj), // 第一层 data 存储为 JSON 字符串
         };
       }
+
+      // 解析两层 data 字符串以便在日志中显示结构
+      let firstDataObjForLog = null;
+      let secondDataObjForLog = null;
+      
+      if (rawCozeData?.data && typeof rawCozeData.data === 'string') {
+        try {
+          firstDataObjForLog = JSON.parse(rawCozeData.data);
+          if (firstDataObjForLog?.data && typeof firstDataObjForLog.data === 'string') {
+            try {
+              secondDataObjForLog = JSON.parse(firstDataObjForLog.data);
+            } catch (e) {
+              // 忽略解析错误
+            }
+          } else if (firstDataObjForLog?.data && typeof firstDataObjForLog.data === 'object') {
+            secondDataObjForLog = firstDataObjForLog.data;
+          }
+        } catch (e) {
+          // 忽略解析错误
+        }
+      } else if (rawCozeData?.data && typeof rawCozeData.data === 'object') {
+        firstDataObjForLog = rawCozeData.data;
+        if (firstDataObjForLog?.data && typeof firstDataObjForLog.data === 'string') {
+          try {
+            secondDataObjForLog = JSON.parse(firstDataObjForLog.data);
+          } catch (e) {
+            // 忽略解析错误
+          }
+        } else if (firstDataObjForLog?.data && typeof firstDataObjForLog.data === 'object') {
+          secondDataObjForLog = firstDataObjForLog.data;
+        }
+      }
+      
+      console.log("🔵 [编辑保存] 准备发送的数据:", {
+        _id: row._id,
+        username,
+        hasRawCozeResponse: !!rawCozeData,
+        hasFirstData: !!rawCozeData?.data,
+        firstDataType: typeof rawCozeData?.data,
+        firstDataLength: typeof rawCozeData?.data === 'string' ? rawCozeData.data.length : 0,
+        hasSecondData: !!secondDataObjForLog,
+        detailedLength: secondDataObjForLog?.detailed?.length || 0,
+        dataStructure: rawCozeData ? {
+          keys: Object.keys(rawCozeData),
+          firstDataKeys: firstDataObjForLog ? Object.keys(firstDataObjForLog) : [],
+          secondDataKeys: secondDataObjForLog ? Object.keys(secondDataObjForLog) : [],
+          firstDataType: typeof rawCozeData.data,
+        } : null,
+      });
 
       // 调用 API 更新数据库
-      const username = getCurrentUsername();
-      if (!username) {
-        showToast("请先登录", "error");
-        return;
-      }
       const response = await fetch("/api/policy-compare-records", {
         method: "PATCH",
         headers: {
@@ -788,25 +955,178 @@ function DetailModal({
         }),
       });
 
+      console.log("🔵 [编辑保存] API 响应状态:", response.status, response.statusText);
+
       const data = await response.json();
+      console.log("🔵 [编辑保存] API 响应数据:", {
+        success: data.success,
+        message: data.message,
+        hasData: !!data.data,
+        code: data.code,
+      });
+
       if (data.success) {
+        console.log("✅ [编辑保存] API返回成功，开始验证数据库更新");
+        
+        // 验证：重新查询数据库确认更新是否成功
+        try {
+          const verifyResponse = await fetch(`/api/policy-compare-records?id=${row._id}&username=${encodeURIComponent(username)}`);
+          const verifyData = await verifyResponse.json();
+          
+          if (verifyData.success && verifyData.data) {
+            let savedRawCozeData = null;
+            try {
+              if (verifyData.data.rawCozeResponse) {
+                savedRawCozeData = typeof verifyData.data.rawCozeResponse === 'string' 
+                  ? JSON.parse(verifyData.data.rawCozeResponse) 
+                  : verifyData.data.rawCozeResponse;
+              }
+            } catch (e) {
+              console.error("❌ [编辑保存] 验证时解析数据失败:", e);
+            }
+            
+            // 解析保存的数据（需要解析两层 data）
+            let savedDetailed = "";
+            if (savedRawCozeData) {
+              let firstDataObj = savedRawCozeData.data;
+              console.log("🔵 [编辑保存] 验证时第一层 data 类型:", typeof firstDataObj);
+              
+              // 解析第一层 data
+              if (typeof firstDataObj === 'string') {
+                try {
+                  firstDataObj = JSON.parse(firstDataObj);
+                  console.log("🔵 [编辑保存] 验证时成功解析第一层 data 字符串");
+                } catch (e) {
+                  console.error("❌ [编辑保存] 验证时解析第一层 data 失败:", e);
+                  console.error("❌ [编辑保存] 第一层 data 字符串内容:", firstDataObj?.substring(0, 200));
+                }
+              }
+              
+              // 解析第二层 data
+              if (firstDataObj && typeof firstDataObj === 'object') {
+                let secondDataObj = firstDataObj.data;
+                console.log("🔵 [编辑保存] 验证时第二层 data 类型:", typeof secondDataObj);
+                
+                if (typeof secondDataObj === 'string') {
+                  try {
+                    secondDataObj = JSON.parse(secondDataObj);
+                    console.log("🔵 [编辑保存] 验证时成功解析第二层 data 字符串");
+                  } catch (e) {
+                    console.error("❌ [编辑保存] 验证时解析第二层 data 失败:", e);
+                    console.error("❌ [编辑保存] 第二层 data 字符串内容:", secondDataObj?.substring(0, 200));
+                  }
+                }
+                
+                if (secondDataObj && typeof secondDataObj === 'object') {
+                  savedDetailed = secondDataObj.detailed || "";
+                  console.log("🔵 [编辑保存] 验证时提取的 data.data.detailed 长度:", savedDetailed.length);
+                } else {
+                  console.warn("⚠️ [编辑保存] 验证时第二层 data 不是对象:", typeof secondDataObj);
+                }
+              } else {
+                console.warn("⚠️ [编辑保存] 验证时第一层 data 不是对象:", typeof firstDataObj);
+              }
+            }
+            
+            const expectedDetailed = editingContent;
+            
+            console.log("🔵 [编辑保存] 验证结果:", {
+              savedLength: savedDetailed.length,
+              expectedLength: expectedDetailed.length,
+              match: savedDetailed === expectedDetailed,
+              savedPreview: savedDetailed.substring(0, 50),
+              expectedPreview: expectedDetailed.substring(0, 50),
+              savedDataStructure: savedRawCozeData ? {
+                hasData: !!savedRawCozeData.data,
+                dataType: typeof savedRawCozeData.data,
+                hasDetailed: typeof savedRawCozeData.data === 'object' ? !!savedRawCozeData.data?.detailed : false,
+              } : null,
+            });
+            
+            if (savedDetailed === expectedDetailed) {
+              console.log("✅ [编辑保存] 数据库验证成功，内容已正确保存");
+            } else {
+              console.warn("⚠️ [编辑保存] 数据库验证失败，内容可能未正确保存");
+              console.warn("⚠️ [编辑保存] 差异:", {
+                saved: savedDetailed.substring(0, 100),
+                expected: expectedDetailed.substring(0, 100),
+              });
+            }
+          } else {
+            console.warn("⚠️ [编辑保存] 验证查询失败:", verifyData);
+          }
+        } catch (verifyError) {
+          console.error("❌ [编辑保存] 验证过程出错:", verifyError);
+        }
+        
+        console.log("✅ [编辑保存] 保存成功");
         showToast("保存成功", "success");
         setIsEditing(false);
         
         // 更新本地 row 数据
         if (onUpdate && row) {
+          // 从 rawCozeData.data.data 中提取 structured 数据（需要解析两层）
+          let comparisonStructured = null;
+          let firstDataObj = rawCozeData?.data;
+          
+          // 解析第一层 data
+          if (typeof firstDataObj === 'string') {
+            try {
+              firstDataObj = JSON.parse(firstDataObj);
+            } catch (e) {
+              console.error("❌ [编辑保存] 更新本地数据时解析第一层 data 失败:", e);
+            }
+          }
+          
+          // 解析第二层 data
+          if (firstDataObj && typeof firstDataObj === 'object') {
+            let secondDataObj = firstDataObj.data;
+            if (typeof secondDataObj === 'string') {
+              try {
+                secondDataObj = JSON.parse(secondDataObj);
+              } catch (e) {
+                console.error("❌ [编辑保存] 更新本地数据时解析第二层 data 失败:", e);
+              }
+            }
+            
+            // 如果第二层 data 包含 structured 格式的数据，提取它
+            if (secondDataObj && typeof secondDataObj === 'object') {
+              if (secondDataObj.detailed || secondDataObj.summary || secondDataObj.added || secondDataObj.modified || secondDataObj.deleted) {
+                comparisonStructured = {
+                  detailed: secondDataObj.detailed || "",
+                  summary: secondDataObj.summary || "",
+                  added: secondDataObj.added || [],
+                  modified: secondDataObj.modified || [],
+                  deleted: secondDataObj.deleted || [],
+                  statistics: secondDataObj.statistics || {
+                    totalAdded: 0,
+                    totalDeleted: 0,
+                    totalModified: 0,
+                  },
+                };
+              }
+            }
+          }
+          
           const updatedRow: ComparisonRow = {
             ...row,
-            comparisonStructured: rawCozeData.structured,
+            comparisonStructured: comparisonStructured || row.comparisonStructured,
             isJsonFormat: true,
           };
+          console.log("🔵 [编辑保存] 更新本地数据");
           onUpdate(updatedRow);
         }
       } else {
+        console.error("❌ [编辑保存] 保存失败:", data.message || "未知错误");
         showToast(data.message || "保存失败", "error");
       }
     } catch (error: any) {
-      console.error("保存失败:", error);
+      console.error("❌ [编辑保存] 保存异常:", error);
+      console.error("❌ [编辑保存] 错误详情:", {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+      });
       showToast("保存失败：" + (error.message || "未知错误"), "error");
     } finally {
       setIsSaving(false);

@@ -237,7 +237,16 @@ export async function PATCH(request: NextRequest) {
       username, // 用户名（必填）
     } = body; // 使用数据库的_id字段
 
+    console.log("🔵 [PATCH API] 收到更新请求:", {
+      _id,
+      username,
+      hasRawCozeResponse: rawCozeResponse !== undefined,
+      rawCozeResponseType: typeof rawCozeResponse,
+      rawCozeResponseKeys: rawCozeResponse ? Object.keys(rawCozeResponse) : [],
+    });
+
     if (!_id) {
+      console.error("❌ [PATCH API] 缺少记录ID");
       return NextResponse.json(
         { success: false, message: "缺少记录ID（_id）" },
         { status: 400 }
@@ -245,6 +254,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (!username) {
+      console.error("❌ [PATCH API] 缺少用户名参数");
       return NextResponse.json(
         { success: false, message: "缺少用户名参数" },
         { status: 400 }
@@ -254,12 +264,21 @@ export async function PATCH(request: NextRequest) {
     const db = getDatabase();
 
     // 先查询记录，验证是否属于当前用户
+    console.log("🔵 [PATCH API] 查询记录，ID:", _id);
     const recordResult: any = await db
       .collection(COLLECTION_NAME)
       .doc(_id)
       .get();
 
+    console.log("🔵 [PATCH API] 查询结果:", {
+      hasCode: typeof recordResult.code === 'string',
+      code: recordResult.code,
+      hasData: !!recordResult.data,
+      dataLength: recordResult.data?.length || 0,
+    });
+
     if (typeof recordResult.code === 'string' || !recordResult.data || recordResult.data.length === 0) {
+      console.error("❌ [PATCH API] 记录不存在");
       return NextResponse.json(
         { success: false, message: "记录不存在" },
         { status: 404 }
@@ -267,7 +286,15 @@ export async function PATCH(request: NextRequest) {
     }
 
     const record = recordResult.data[0];
+    console.log("🔵 [PATCH API] 记录信息:", {
+      recordId: record._id,
+      recordUsername: record.username,
+      requestUsername: username,
+      usernameMatch: record.username === username,
+    });
+
     if (record.username !== username) {
+      console.error("❌ [PATCH API] 无权更新此记录");
       return NextResponse.json(
         { success: false, message: "无权更新此记录" },
         { status: 403 }
@@ -321,7 +348,79 @@ export async function PATCH(request: NextRequest) {
 
     // 更新原始扣子API返回数据（如果提供）
     if (rawCozeResponse !== undefined) {
-      updateData.rawCozeResponse = rawCozeResponse ? JSON.stringify(rawCozeResponse) : null;
+      console.log("🔵 [PATCH API] 准备更新 rawCozeResponse");
+      try {
+        const serialized = rawCozeResponse ? JSON.stringify(rawCozeResponse) : null;
+        updateData.rawCozeResponse = serialized;
+        console.log("🔵 [PATCH API] rawCozeResponse 序列化成功，长度:", serialized?.length || 0);
+        
+        // 验证序列化后的数据（需要解析两层 data）
+        if (serialized) {
+          try {
+            const parsed = JSON.parse(serialized);
+            console.log("🔵 [PATCH API] 验证序列化数据:");
+            console.log("🔵 [PATCH API] 第一层数据结构:", {
+              hasData: !!parsed?.data,
+              dataType: typeof parsed?.data,
+              dataKeys: parsed ? Object.keys(parsed) : [],
+            });
+            
+            // 解析第一层 data
+            let firstDataObj = parsed?.data;
+            if (typeof firstDataObj === 'string') {
+              try {
+                firstDataObj = JSON.parse(firstDataObj);
+                console.log("🔵 [PATCH API] 第一层 data 字段是字符串，解析成功");
+              } catch (e) {
+                console.error("❌ [PATCH API] 解析第一层 data 字符串失败:", e);
+              }
+            }
+            
+            // 解析第二层 data
+            if (firstDataObj && typeof firstDataObj === 'object') {
+              console.log("🔵 [PATCH API] 第一层 data 对象结构:", {
+                hasData: !!firstDataObj.data,
+                dataDataType: typeof firstDataObj.data,
+                keys: Object.keys(firstDataObj),
+              });
+              
+              let secondDataObj = firstDataObj.data;
+              if (typeof secondDataObj === 'string') {
+                try {
+                  secondDataObj = JSON.parse(secondDataObj);
+                  console.log("🔵 [PATCH API] 第二层 data.data 字段是字符串，解析成功");
+                } catch (e) {
+                  console.error("❌ [PATCH API] 解析第二层 data.data 字符串失败:", e);
+                }
+              }
+              
+              if (secondDataObj && typeof secondDataObj === 'object') {
+                console.log("🔵 [PATCH API] 第二层 data.data 对象结构:", {
+                  hasDetailed: !!secondDataObj.detailed,
+                  keys: Object.keys(secondDataObj),
+                });
+                console.log("🔵 [PATCH API] detailed长度:", secondDataObj.detailed?.length || 0);
+                console.log("🔵 [PATCH API] detailed预览:", secondDataObj.detailed?.substring(0, 100) || "");
+              } else {
+                console.warn("⚠️ [PATCH API] 第二层 data.data 不是对象:", typeof secondDataObj);
+              }
+            } else {
+              console.warn("⚠️ [PATCH API] 第一层 data 不是对象:", typeof firstDataObj);
+            }
+          } catch (e) {
+            console.error("❌ [PATCH API] 序列化数据验证失败:", e);
+          }
+        }
+      } catch (e) {
+        console.error("❌ [PATCH API] 序列化 rawCozeResponse 失败:", e);
+        return NextResponse.json(
+          {
+            success: false,
+            message: "序列化数据失败: " + (e instanceof Error ? e.message : String(e)),
+          },
+          { status: 500 }
+        );
+      }
     }
 
     // 更新对比时间（如果提供）
@@ -329,15 +428,29 @@ export async function PATCH(request: NextRequest) {
       updateData.add_time = add_time;
     }
 
+    console.log("🔵 [PATCH API] 准备更新数据库，更新数据键:", Object.keys(updateData));
+    console.log("🔵 [PATCH API] updateData:", {
+      ...updateData,
+      rawCozeResponse: updateData.rawCozeResponse ? `[字符串长度: ${updateData.rawCozeResponse.length}]` : null,
+    });
+
     // 使用SDK更新记录（通过数据库的_id）
     const result: any = await db
       .collection(COLLECTION_NAME)
       .doc(_id)
       .update(updateData);
 
+    console.log("🔵 [PATCH API] 数据库更新结果:", {
+      hasCode: typeof result.code === 'string',
+      code: result.code,
+      message: result.message,
+      updated: result.updated,
+      resultKeys: Object.keys(result),
+    });
+
     // 检查是否有错误（根据文档，应该检查 typeof result.code === 'string'）
     if (typeof result.code === 'string') {
-      console.error("更新记录失败:", result);
+      console.error("❌ [PATCH API] 更新记录失败:", result);
       // 如果记录不存在，返回404
       if (result.code === 'DATABASE_PERMISSION_DENIED' || result.message?.includes('not found')) {
         return NextResponse.json(
@@ -359,6 +472,7 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    console.log("✅ [PATCH API] 更新成功");
     return NextResponse.json({
       success: true,
       message: "更新成功",
