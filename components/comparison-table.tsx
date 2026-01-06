@@ -175,7 +175,7 @@ function PreviewRow({
   if (row.comparisonStatus === "comparing") {
     return (
       <tr className="bg-slate-50/50">
-        <td colSpan={7} className="px-4 py-4">
+        <td colSpan={8} className="px-4 py-4">
           <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-center">
             <div className="inline-flex items-center gap-2">
               <svg className="animate-spin h-5 w-5 text-blue-600" fill="none" viewBox="0 0 24 24">
@@ -234,7 +234,7 @@ function PreviewRow({
 
     return (
       <tr className="bg-slate-50/50">
-        <td colSpan={7} className="px-4 py-4">
+        <td colSpan={8} className="px-4 py-4">
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-semibold">对比结果</h3>
@@ -300,7 +300,7 @@ function PreviewRow({
   if (row.comparisonStatus === "error") {
     return (
       <tr className="bg-slate-50/50">
-        <td colSpan={7} className="px-4 py-4">
+        <td colSpan={8} className="px-4 py-4">
           <div className="rounded-xl border border-red-200 bg-red-50 p-4">
             <div className="text-sm text-red-700">
               <strong>对比失败：</strong>
@@ -517,10 +517,10 @@ function ComparisonCardsRow({
 
   const { added, modified, deleted, summary } = structured;
 
-  return (
-    <tr className="bg-slate-50/50">
-      <td colSpan={7} className="px-4 py-4">
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
+    return (
+      <tr className="bg-slate-50/50">
+        <td colSpan={8} className="px-4 py-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
           {/* 摘要显示 - 顶部 */}
           {summary && (
             <div className="mb-4 pb-4 border-b border-slate-200">
@@ -774,13 +774,16 @@ interface ComparisonTableProps {
 }
 
 export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTableProps) {
-  const { comparisons, removeFile, updateComparison, addFile } = useFileContext();
+  const { comparisons, removeFile, updateComparison, addFile, removeComparison } = useFileContext();
   const [openPreviews, setOpenPreviews] = useState<Set<string>>(new Set());
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
   const [detailModal, setDetailModal] = useState<{ open: boolean; row: ComparisonRow | null }>({
     open: false,
     row: null,
   });
+  
+  // 多选状态
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   
   // 历史记录分页状态
   const [historyRecords, setHistoryRecords] = useState<any[]>([]);
@@ -1039,8 +1042,14 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       return;
     }
 
-    // 打开对比模式选择对话框
-    setCompareModeModal({ open: true, row });
+    // 检查对比状态，如果已完成，弹出对比模式选择对话框（覆盖/创建）
+    if (row.comparisonStatus === "done") {
+      // 已完成：弹出对话框让用户选择覆盖还是创建
+      setCompareModeModal({ open: true, row });
+    } else {
+      // 未完成或未对比：直接开始对比，使用overwrite模式（更新当前记录）
+      executeCompare(row, "overwrite");
+    }
   };
 
   // 执行对比（根据模式）
@@ -1558,6 +1567,133 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
   // 合并当前对比和历史记录
   const allComparisons = showHistory ? historyRows : comparisons;
 
+  // 切换单个项的选中状态
+  const toggleSelect = (rowId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowId)) {
+        next.delete(rowId);
+      } else {
+        next.add(rowId);
+      }
+      return next;
+    });
+  };
+
+  // 全选/取消全选当前页
+  const toggleSelectAll = () => {
+    if (selectedIds.size === sortedComparisons.length && sortedComparisons.length > 0) {
+      // 如果已全选，取消全选
+      setSelectedIds(new Set());
+    } else {
+      // 全选当前页
+      const allIds = new Set(sortedComparisons.map((row) => row.id));
+      setSelectedIds(allIds);
+    }
+  };
+
+  // 删除选中的项
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) {
+      showToast("请先选择要删除的项", "info");
+      return;
+    }
+
+    const confirmMessage = `确定要删除选中的 ${selectedIds.size} 项吗？`;
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    const selectedRows = sortedComparisons.filter((row) => selectedIds.has(row.id));
+    
+    // 分离有数据库_id和无_id的记录
+    const rowsWithId = selectedRows.filter((row) => row._id);
+    const rowsWithoutId = selectedRows.filter((row) => !row._id);
+
+    // 删除有数据库_id的记录
+    const deletePromises = rowsWithId.map(async (row) => {
+      try {
+        const response = await fetch(
+          `/api/policy-compare-records?id=${encodeURIComponent(row._id!)}`,
+          {
+            method: "DELETE",
+          }
+        );
+        const data = await response.json();
+        if (!data.success) {
+          console.error(`删除记录失败 [${row.company}]:`, data);
+          throw new Error(data.message || "删除失败");
+        }
+        return { success: true, row };
+      } catch (error) {
+        console.error(`删除记录时出错 [${row.company}]:`, error);
+        throw error;
+      }
+    });
+
+    try {
+      // 等待所有数据库删除操作完成
+      await Promise.all(deletePromises);
+      
+      // 从前端删除所有选中的项
+      if (showHistory) {
+        // 历史记录：从历史记录列表中删除
+        const deletedIds = new Set(rowsWithId.map((r) => r._id).filter((id): id is string => !!id));
+        setHistoryRecords((prev) => prev.filter((r) => !deletedIds.has(r._id)));
+        // 同时从历史记录对比状态中删除
+        setHistoryComparingStates((prev) => {
+          const newMap = new Map(prev);
+          deletedIds.forEach((id) => newMap.delete(id));
+          return newMap;
+        });
+        // 重新加载数据以确保数据一致性
+        await loadHistoryRecords(currentPage);
+      } else {
+        // 当前对比：删除所有选中的项（包括有_id和无_id的）
+        selectedRows.forEach((row) => {
+          removeComparison(row.id);
+        });
+      }
+
+      // 同时删除没有数据库_id的记录（只在前端删除）
+      if (rowsWithoutId.length > 0 && !showHistory) {
+        // 这些记录只存在于前端，直接删除即可
+        rowsWithoutId.forEach((row) => {
+          removeComparison(row.id);
+        });
+      }
+
+      showToast(`成功删除 ${selectedIds.size} 项`, "success");
+      // 清空选中状态
+      setSelectedIds(new Set());
+    } catch (error) {
+      console.error("批量删除失败:", error);
+      showToast("部分删除失败，请检查网络连接", "error");
+      // 删除失败时，如果是历史记录，重新加载以确保数据一致性
+      if (showHistory) {
+        await loadHistoryRecords(currentPage);
+      }
+    }
+  };
+
+  // 导出选中（暂时只显示提示）
+  const handleExportSelected = () => {
+    if (selectedIds.size === 0) {
+      showToast("请先选择要导出的项", "info");
+      return;
+    }
+    showToast("功能正在开发", "info");
+  };
+
+  // 导出全部（暂时只显示提示）
+  const handleExportAll = () => {
+    if (sortedComparisons.length === 0) {
+      showToast("没有可导出的数据", "info");
+      return;
+    }
+    showToast("功能正在开发", "info");
+  };
+
   // 过滤对比列表
   const filteredComparisons = allComparisons.filter((row) => {
     const hasBothFiles = row.thisYearFile && row.lastYearFile;
@@ -1587,6 +1723,10 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
     a.company.localeCompare(b.company, "zh-CN")
   );
 
+  // 检查是否全选
+  const isAllSelected = sortedComparisons.length > 0 && selectedIds.size === sortedComparisons.length;
+  const isIndeterminate = selectedIds.size > 0 && selectedIds.size < sortedComparisons.length;
+
   return (
     <Fragment>
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -1594,7 +1734,10 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-white">
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setShowHistory(false)}
+            onClick={() => {
+              setShowHistory(false);
+              setSelectedIds(new Set()); // 切换时清空选中
+            }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               !showHistory
                 ? "bg-slate-900 text-white"
@@ -1606,6 +1749,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           <button
             onClick={() => {
               setShowHistory(true);
+              setSelectedIds(new Set()); // 切换时清空选中
               loadHistoryRecords(1);
             }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -1673,6 +1817,62 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         )}
       </div>
 
+      {/* 操作按钮区域 */}
+      <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-slate-50">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={toggleSelectAll}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2"
+          >
+            <input
+              type="checkbox"
+              checked={isAllSelected}
+              ref={(input) => {
+                if (input) input.indeterminate = isIndeterminate;
+              }}
+              onChange={toggleSelectAll}
+              className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+            />
+            全选
+          </button>
+          <button
+            onClick={handleDeleteSelected}
+            disabled={selectedIds.size === 0}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            选中删除 ({selectedIds.size})
+          </button>
+          <button
+            onClick={handleExportSelected}
+            disabled={selectedIds.size === 0}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            导出选中 ({selectedIds.size})
+          </button>
+          <button
+            onClick={handleExportAll}
+            disabled={sortedComparisons.length === 0}
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            导出全部 ({sortedComparisons.length})
+          </button>
+        </div>
+        {selectedIds.size > 0 && (
+          <div className="text-sm text-slate-600">
+            已选择 {selectedIds.size} 项
+          </div>
+        )}
+      </div>
+
       {isLoadingHistory && showHistory && (
         <div className="p-8 text-center">
           <div className="inline-flex items-center justify-center h-8 w-8 rounded-full bg-blue-100 mb-2 animate-pulse">
@@ -1694,6 +1894,17 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         <table className="min-w-full text-left text-sm" style={{ tableLayout: 'fixed' }}>
           <thead className="bg-white text-slate-600">
             <tr className="border-b border-slate-200">
+              <th className="px-4 py-3 font-medium" style={{ width: "50px" }}>
+                <input
+                  type="checkbox"
+                  checked={isAllSelected}
+                  ref={(input) => {
+                    if (input) input.indeterminate = isIndeterminate;
+                  }}
+                  onChange={toggleSelectAll}
+                  className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                />
+              </th>
               <th className="px-4 py-3 font-medium" style={{ width: "160px" }}>对比时间</th>
               <th className="px-4 py-3 font-medium" style={{ width: "120px" }}>分公司</th>
               <th className="px-4 py-3 font-medium" style={{ width: "160px" }}>旧年度文件</th>
@@ -1707,7 +1918,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           <tbody className="divide-y divide-slate-200 bg-white">
             {sortedComparisons.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
+                <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
                   {showHistory ? "暂无历史记录" : "暂无文件，请先上传文件"}
                 </td>
               </tr>
@@ -1734,9 +1945,19 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                   }
                 };
                 
+                const isSelected = selectedIds.has(row.id);
+                
                 return (
                   <Fragment key={row.id}>
-                    <tr className={`hover:bg-slate-50 ${row.isVerified ? 'bg-emerald-50/50 border-l-4 border-l-emerald-500' : ''}`}>
+                    <tr className={`hover:bg-slate-50 ${row.isVerified ? 'bg-emerald-50/50 border-l-4 border-l-emerald-500' : ''} ${isSelected ? 'bg-blue-50' : ''}`}>
+                      <td className="px-4 py-3">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelect(row.id)}
+                          className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                        />
+                      </td>
                       <td className="px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
                         {formatCompareTime(row.compareTime)}
                       </td>
@@ -1953,11 +2174,20 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
             const hasThisYearUrl = !!(row.thisYearFile?.file_url || row.thisYearFile?.url);
             const hasLastYearUrl = !!(row.lastYearFile?.file_url || row.lastYearFile?.url);
             const canCompare = hasThisYear && hasLastYear && hasThisYearUrl && hasLastYearUrl;
+            const isSelected = selectedIds.has(row.id);
 
             return (
-              <div key={row.id} className={`p-4 space-y-3 ${row.isVerified ? 'bg-emerald-50/50 border-l-4 border-l-emerald-500' : ''}`}>
+              <div key={row.id} className={`p-4 space-y-3 ${row.isVerified ? 'bg-emerald-50/50 border-l-4 border-l-emerald-500' : ''} ${isSelected ? 'bg-blue-50' : ''}`}>
                 <div className="flex items-center justify-between">
-                  <div className="font-semibold text-sm">{displayCompany}</div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelect(row.id)}
+                      className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                    />
+                    <div className="font-semibold text-sm">{displayCompany}</div>
+                  </div>
                 </div>
                 
                 <div className="space-y-2">
@@ -2323,6 +2553,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       </div>,
       document.body
     )}
+
     </Fragment>
   );
 }
