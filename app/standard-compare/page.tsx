@@ -10,6 +10,7 @@ import {getCozeTokenClient} from "@/lib/coze-config";
 import {showToast} from "@/lib/toast";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import * as XLSX from "xlsx";
 
 // 标准项接口定义
 interface StandardItem {
@@ -89,6 +90,9 @@ export default function StandardComparePage() {
     // 历史记录中正在对比的状态（用于覆盖模式）
     const historyComparingStates = useRef<Map<string, { compareStatus: "comparing" | "success" | "error"; compareResult: StandardItem[] | null; error?: string }>>(new Map());
 
+    // 多选状态
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
     // 检查登录状态
     useEffect(() => {
         const checkAutoLogin = async () => {
@@ -134,7 +138,7 @@ export default function StandardComparePage() {
         try {
             const params = new URLSearchParams({
                 page: page.toString(),
-                pageSize: "100",
+                pageSize: "500",
             });
             if (filterStatus === "已审核") {
                 params.append("isVerified", "true");
@@ -203,6 +207,11 @@ export default function StandardComparePage() {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [showHistory, currentPage, filterStatus, isLoggedIn]);
+
+    // 切换显示历史记录时清空选中状态
+    useEffect(() => {
+        setSelectedIds(new Set());
+    }, [showHistory]);
 
     const handleLoginSuccess = (loggedInUsername: string) => {
         setUsername(loggedInUsername);
@@ -988,6 +997,12 @@ export default function StandardComparePage() {
 
         if (!file) return;
 
+        // 检查是否正在对比
+        if (file.compareStatus === "comparing") {
+            showToast("无法删除正在对比的文件，请等待对比完成", "error");
+            return;
+        }
+
         // 如果有数据库ID，需要删除数据库记录
         if (file._id) {
             const fileId = file._id; // 此时已经确认 _id 存在
@@ -1079,6 +1094,333 @@ export default function StandardComparePage() {
         setFilterStatus(value);
         if (showHistory) {
             loadHistoryRecords(1);
+        }
+    };
+
+    // 切换单个项的选中状态
+    const toggleSelect = (fileId: string) => {
+        setSelectedIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(fileId)) {
+                next.delete(fileId);
+            } else {
+                next.add(fileId);
+            }
+            return next;
+        });
+    };
+
+    // 全选/取消全选当前页
+    const toggleSelectAll = () => {
+        const currentFiles = showHistory ? filteredFiles : files;
+        if (selectedIds.size === currentFiles.length && currentFiles.length > 0) {
+            // 如果已全选，取消全选
+            setSelectedIds(new Set());
+        } else {
+            // 全选当前页
+            const allIds = new Set(currentFiles.map((file) => file.id));
+            setSelectedIds(allIds);
+        }
+    };
+
+    // 删除选中的项
+    const handleDeleteSelected = async () => {
+        if (selectedIds.size === 0) {
+            showToast("请先选择要删除的项", "info");
+            return;
+        }
+
+        const currentFiles = showHistory ? filteredFiles : files;
+        const selectedFiles = currentFiles.filter((file) => selectedIds.has(file.id));
+        
+        // 检查是否有正在对比的文件
+        const comparingFiles = selectedFiles.filter((file) => file.compareStatus === "comparing");
+        if (comparingFiles.length > 0) {
+            showToast("无法删除正在对比的文件，请等待对比完成", "error");
+            return;
+        }
+
+        const confirmMessage = `确定要删除选中的 ${selectedIds.size} 项吗？`;
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+        
+        // 分离有数据库_id和无_id的记录
+        const filesWithId = selectedFiles.filter((file) => file._id);
+        const filesWithoutId = selectedFiles.filter((file) => !file._id);
+
+        // 删除有数据库_id的记录
+        const deletePromises = filesWithId.map(async (file) => {
+            try {
+                const response = await fetch(
+                    `/api/standard-compare-records?id=${encodeURIComponent(file._id!)}`,
+                    {
+                        method: "DELETE",
+                    }
+                );
+                const data = await response.json();
+                if (!data.success) {
+                    console.error(`删除记录失败 [${file.city}]:`, data);
+                    throw new Error(data.message || "删除失败");
+                }
+                return { success: true, file };
+            } catch (error) {
+                console.error(`删除记录时出错 [${file.city}]:`, error);
+                throw error;
+            }
+        });
+
+        try {
+            await Promise.all(deletePromises);
+            
+            // 删除无_id的记录（只从前端删除）
+            if (filesWithoutId.length > 0) {
+                if (showHistory) {
+                    // 历史记录模式：重新加载
+                    await loadHistoryRecords(currentPage);
+                } else {
+                    // 当前对比模式：从前端删除
+                    setFiles((prev) => prev.filter((file) => !selectedIds.has(file.id)));
+                }
+            } else {
+                // 如果有数据库记录，重新加载数据
+                if (showHistory) {
+                    await loadHistoryRecords(currentPage);
+                } else {
+                    // 当前对比模式：删除已选中的项
+                    setFiles((prev) => prev.filter((file) => !selectedIds.has(file.id)));
+                }
+            }
+
+            showToast(`成功删除 ${selectedIds.size} 项`, "success");
+            // 清空选中状态
+            setSelectedIds(new Set());
+        } catch (error) {
+            console.error("批量删除失败:", error);
+            showToast("部分删除失败，请检查网络连接", "error");
+        }
+    };
+
+    // 导出下拉菜单状态
+    const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
+    const exportDropdownRef = useRef<HTMLDivElement>(null);
+
+    // 点击外部关闭下拉菜单
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (exportDropdownRef.current && !exportDropdownRef.current.contains(event.target as Node)) {
+                setExportDropdownOpen(false);
+            }
+        };
+
+        if (exportDropdownOpen) {
+            document.addEventListener("mousedown", handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener("mousedown", handleClickOutside);
+        };
+    }, [exportDropdownOpen]);
+
+    // 导出简易版
+    const handleExportSimple = () => {
+        if (selectedIds.size === 0) {
+            showToast("请先选择要导出的项", "info");
+            return;
+        }
+
+        const currentFiles = showHistory ? filteredFiles : files;
+        const selectedFiles = currentFiles.filter((file) => selectedIds.has(file.id));
+        
+        // 只导出已完成的对比记录
+        const completedFiles = selectedFiles.filter((file) => file.compareStatus === "success" && file.compareResult);
+        
+        if (completedFiles.length === 0) {
+            showToast("没有可导出的已完成对比记录", "info");
+            return;
+        }
+
+        try {
+            // 获取标准项名称
+            const standardNames = getStandardNames();
+            
+            // 构建Excel数据
+            const excelData = completedFiles.map((file) => {
+                const row: any = {
+                    "对比时间": formatCompareTime(file.compareTime),
+                    "城市": file.city || "",
+                    "文件名": file.name || "",
+                    "文件地址链接": file.file_url || "",
+                };
+
+                // 添加每个标准项的结论
+                if (file.compareResult && Array.isArray(file.compareResult)) {
+                    standardNames.forEach((standardName, index) => {
+                        const result = file.compareResult![index];
+                        if (result) {
+                            let conclusion = result.status || "";
+                            if (result.matched !== null) {
+                                conclusion += result.matched ? " ✓匹配" : " ✗不匹配";
+                            }
+                            row[standardName] = conclusion;
+                        } else {
+                            row[standardName] = "-";
+                        }
+                    });
+                } else {
+                    standardNames.forEach((standardName) => {
+                        row[standardName] = "-";
+                    });
+                }
+
+                return row;
+            });
+
+            // 创建工作簿
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.json_to_sheet(excelData);
+
+            // 设置列宽
+            const colWidths = [
+                { wch: 20 }, // 对比时间
+                { wch: 15 }, // 城市
+                { wch: 30 }, // 文件名
+                { wch: 50 }, // 文件地址链接
+            ];
+            // 为每个标准项设置列宽
+            standardNames.forEach(() => {
+                colWidths.push({ wch: 25 });
+            });
+            ws["!cols"] = colWidths;
+
+            // 将工作表添加到工作簿
+            XLSX.utils.book_append_sheet(wb, ws, "标准对比记录");
+
+            // 导出文件
+            const filename = `标准对比记录_简易版_${new Date().toISOString().split("T")[0]}.xlsx`;
+            XLSX.writeFile(wb, filename);
+
+            showToast(`成功导出 ${completedFiles.length} 条记录（简易版）`, "success");
+            setExportDropdownOpen(false);
+        } catch (error) {
+            console.error("导出Excel失败:", error);
+            showToast("导出失败，请稍后重试", "error");
+        }
+    };
+
+    // 导出详情版
+    const handleExportDetailed = () => {
+        if (selectedIds.size === 0) {
+            showToast("请先选择要导出的项", "info");
+            return;
+        }
+
+        const currentFiles = showHistory ? filteredFiles : files;
+        const selectedFiles = currentFiles.filter((file) => selectedIds.has(file.id));
+        
+        // 只导出已完成的对比记录
+        const completedFiles = selectedFiles.filter((file) => file.compareStatus === "success" && file.compareResult);
+        
+        if (completedFiles.length === 0) {
+            showToast("没有可导出的已完成对比记录", "info");
+            return;
+        }
+
+        try {
+            // 获取标准项名称
+            const standardNames = getStandardNames();
+            
+            // 构建Excel数据
+            const excelData = completedFiles.map((file) => {
+                const row: any = {
+                    "对比时间": formatCompareTime(file.compareTime),
+                    "城市": file.city || "",
+                    "文件名": file.name || "",
+                    "文件地址链接": file.file_url || "",
+                };
+
+                // 添加每个标准项的完整信息
+                if (file.compareResult && Array.isArray(file.compareResult)) {
+                    standardNames.forEach((standardName, index) => {
+                        const result = file.compareResult![index];
+                        if (result) {
+                            // 状态
+                            let statusText = result.status || "";
+                            if (result.matched !== null) {
+                                statusText += result.matched ? " ✓匹配" : " ✗不匹配";
+                            }
+                            
+                            // 依据（evidence）
+                            const evidence = result.evidence || "";
+                            
+                            // 结论（analysis）
+                            const analysis = result.analysis || "";
+                            
+                            // 组合完整内容
+                            let fullContent = `状态：${statusText}`;
+                            if (evidence) {
+                                fullContent += `\n\n依据：\n${evidence}`;
+                            }
+                            if (analysis) {
+                                fullContent += `\n\n结论：\n${analysis}`;
+                            }
+                            
+                            row[standardName] = fullContent;
+                        } else {
+                            row[standardName] = "-";
+                        }
+                    });
+                } else {
+                    standardNames.forEach((standardName) => {
+                        row[standardName] = "-";
+                    });
+                }
+
+                return row;
+            });
+
+            // 创建工作簿
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.json_to_sheet(excelData);
+
+            // 设置列宽
+            const colWidths = [
+                { wch: 20 }, // 对比时间
+                { wch: 15 }, // 城市
+                { wch: 30 }, // 文件名
+                { wch: 50 }, // 文件地址链接
+            ];
+            // 为每个标准项设置列宽（详情版需要更宽）
+            standardNames.forEach(() => {
+                colWidths.push({ wch: 60 });
+            });
+            ws["!cols"] = colWidths;
+
+            // 设置标准项列的自动换行（从第5列开始，索引4）
+            const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
+            for (let rowIndex = 1; rowIndex <= range.e.r; rowIndex++) {
+                for (let colIndex = 4; colIndex <= range.e.c; colIndex++) {
+                    const cellAddress = XLSX.utils.encode_cell({ r: rowIndex, c: colIndex });
+                    if (ws[cellAddress] && ws[cellAddress].v && typeof ws[cellAddress].v === 'string' && ws[cellAddress].v.includes('\n')) {
+                        if (!ws[cellAddress].z) {
+                            ws[cellAddress].z = '@'; // 文本格式
+                        }
+                    }
+                }
+            }
+
+            // 将工作表添加到工作簿
+            XLSX.utils.book_append_sheet(wb, ws, "标准对比记录");
+
+            // 导出文件
+            const filename = `标准对比记录_详情版_${new Date().toISOString().split("T")[0]}.xlsx`;
+            XLSX.writeFile(wb, filename);
+
+            showToast(`成功导出 ${completedFiles.length} 条记录（详情版）`, "success");
+            setExportDropdownOpen(false);
+        } catch (error) {
+            console.error("导出Excel失败:", error);
+            showToast("导出失败，请稍后重试", "error");
         }
     };
 
@@ -1221,6 +1563,75 @@ export default function StandardComparePage() {
         <>
             <Header username={username} onLogout={handleLogout}/>
             <main className="mx-auto max-w-[1400px] px-4 py-6 space-y-4">
+                {/* 多选操作按钮 */}
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={toggleSelectAll}
+                            className="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2"
+                        >
+                            <input
+                                type="checkbox"
+                                checked={filteredFiles.length > 0 && selectedIds.size === filteredFiles.length}
+                                onChange={toggleSelectAll}
+                                className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                            />
+                            全选
+                        </button>
+                        <button
+                            onClick={handleDeleteSelected}
+                            disabled={selectedIds.size === 0}
+                            className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                            选中删除 ({selectedIds.size})
+                        </button>
+                        <div className="relative" ref={exportDropdownRef}>
+                            <button
+                                onClick={() => {
+                                    if (selectedIds.size === 0) {
+                                        showToast("请先选择要导出的项", "info");
+                                        return;
+                                    }
+                                    setExportDropdownOpen(!exportDropdownOpen);
+                                }}
+                                disabled={selectedIds.size === 0}
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                导出选中 ({selectedIds.size})
+                                <svg className={`w-4 h-4 transition-transform ${exportDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </button>
+                            {exportDropdownOpen && (
+                                <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-slate-200 rounded-lg shadow-lg z-50">
+                                    <button
+                                        onClick={handleExportSimple}
+                                        className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition-colors first:rounded-t-lg"
+                                    >
+                                        导出简易版
+                                    </button>
+                                    <button
+                                        onClick={handleExportDetailed}
+                                        className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition-colors last:rounded-b-lg"
+                                    >
+                                        导出详情版
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    {selectedIds.size > 0 && (
+                        <div className="text-sm text-slate-600">
+                            已选择 {selectedIds.size} 项
+                        </div>
+                    )}
+                </div>
                 {/* 返回首页按钮和Tab切换 */}
                 <div className="flex items-center justify-between">
                     <button
@@ -1342,11 +1753,17 @@ export default function StandardComparePage() {
                         <table className="w-full border-collapse">
                                 <thead className="bg-slate-100">
                                 <tr>
-                                    {showHistory && (
-                                        <th className="border border-slate-300 px-4 py-3 text-left font-semibold text-slate-900" style={{ width: "160px" }}>
-                                            时间
-                                        </th>
-                                    )}
+                                    <th className="border border-slate-300 px-4 py-3 text-left font-semibold text-slate-900" style={{ width: "50px" }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={filteredFiles.length > 0 && selectedIds.size === filteredFiles.length}
+                                            onChange={toggleSelectAll}
+                                            className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                                        />
+                                    </th>
+                                    <th className="border border-slate-300 px-4 py-3 text-left font-semibold text-slate-900" style={{ width: "160px" }}>
+                                        时间
+                                    </th>
                                     <th className="border border-slate-300 px-4 py-3 text-left font-semibold text-blue-900 w-[400px] bg-blue-200 whitespace-nowrap sticky left-0 z-20 shadow-[2px_0_4px_rgba(0,0,0,0.1)]">
                                         城市
                                     </th>
@@ -1375,18 +1792,26 @@ export default function StandardComparePage() {
                                 </tr>
                                 </thead>
                                 <tbody>
-                                {filteredFiles.map((file) => (
+                                {filteredFiles.map((file) => {
+                                    const isSelected = selectedIds.has(file.id);
+                                    return (
                                     <tr 
                                         key={file.id} 
                                         className={`border-b border-slate-200 hover:bg-slate-50 ${
                                             file.isVerified ? "bg-emerald-50/50 border-l-4 border-l-emerald-500" : ""
-                                        }`}
+                                        } ${isSelected ? 'bg-blue-50' : ''}`}
                                     >
-                                        {showHistory && (
-                                            <td className="border border-slate-300 px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
-                                                {formatCompareTime(file.compareTime)}
-                                            </td>
-                                        )}
+                                        <td className="border border-slate-300 px-4 py-3">
+                                            <input
+                                                type="checkbox"
+                                                checked={isSelected}
+                                                onChange={() => toggleSelect(file.id)}
+                                                className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                                            />
+                                        </td>
+                                        <td className="border border-slate-300 px-4 py-3 text-sm text-slate-600 whitespace-nowrap">
+                                            {formatCompareTime(file.compareTime)}
+                                        </td>
                                         <td className="border border-slate-300 px-4 py-3 w-[400px] bg-blue-50 sticky left-0 z-20 shadow-[2px_0_4px_rgba(0,0,0,0.1)]">
                                             <div className="font-medium text-sm text-blue-900 whitespace-nowrap">
                                                 {file.city || <span className="text-slate-400">-</span>}
@@ -1543,7 +1968,8 @@ export default function StandardComparePage() {
                                             )}
                                         </td>
                                     </tr>
-                                ))}
+                                    );
+                                })}
                                 </tbody>
                             </table>
                         </div>
