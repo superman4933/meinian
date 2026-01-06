@@ -630,6 +630,21 @@ function DetailModal({
   isOpen: boolean;
   onClose: () => void;
 }) {
+  // 阻止背景页面滚动
+  useEffect(() => {
+    if (isOpen) {
+      // 保存原始 overflow 值
+      const originalOverflow = document.body.style.overflow;
+      // 阻止背景滚动
+      document.body.style.overflow = 'hidden';
+      
+      // 清理函数：恢复原始 overflow
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [isOpen]);
+
   if (!isOpen || !row) return null;
 
   let markdownContent = "";
@@ -673,11 +688,9 @@ function DetailModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
     >
       <div
         className="relative w-full max-w-4xl max-h-[90vh] bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col"
-        onClick={(e) => e.stopPropagation()}
       >
         {/* 头部 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
