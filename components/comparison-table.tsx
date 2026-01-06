@@ -174,6 +174,9 @@ function PreviewRow({
   isOpen: boolean;
   onToggle: () => void;
 }) {
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
+  const [pdfDownloadUrlPreview, setPdfDownloadUrlPreview] = useState<string | null>(null);
+  
   if (!isOpen) return null;
 
   if (row.comparisonStatus === "comparing") {
@@ -237,9 +240,10 @@ function PreviewRow({
         return;
       }
 
+      setIsExportingPDF(true);
+      setPdfDownloadUrlPreview(null);
+      
       try {
-        showToast("正在生成PDF，请稍候...", "info");
-        
         const response = await fetch("/api/markdown-to-pdf", {
           method: "POST",
           headers: {
@@ -255,23 +259,36 @@ function PreviewRow({
           throw new Error(errorData.message || "PDF生成失败");
         }
 
-        // 获取 PDF blob
-        const blob = await response.blob();
+        // 获取返回的 JSON 数据（包含 PDF 链接）
+        const data = await response.json();
         
-        // 创建下载链接
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `对比报告_${row.company || "未知"}_${new Date().toISOString().split("T")[0]}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-
-        showToast("PDF导出成功", "success");
+        if (data.success && data.pdfUrl) {
+          // 保存 PDF 链接
+          setPdfDownloadUrlPreview(data.pdfUrl);
+          // 提示用户生成成功，点击下载
+          showToast("PDF生成成功，点击下载", "success");
+          // 清除加载状态
+          setIsExportingPDF(false);
+        } else {
+          throw new Error(data.message || "未获取到 PDF 链接");
+        }
       } catch (error: any) {
         console.error("导出PDF失败:", error);
         showToast(`PDF导出失败: ${error.message || "未知错误"}`, "error");
+        // 清除加载状态
+        setIsExportingPDF(false);
+      }
+    };
+
+    const handleDownloadPDFPreview = () => {
+      if (pdfDownloadUrlPreview) {
+        const a = document.createElement("a");
+        a.href = pdfDownloadUrlPreview;
+        a.download = `对比报告_${row.company || "未知"}_${new Date().toISOString().split("T")[0]}.pdf`;
+        a.target = "_blank";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
       }
     };
 
@@ -293,16 +310,41 @@ function PreviewRow({
                   </svg>
                   复制
                 </button>
-                <button
-                  onClick={handleExportPDF}
-                  className="text-xs text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors flex items-center gap-1"
-                  title="导出PDF"
-                >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  导出PDF
-                </button>
+                {pdfDownloadUrlPreview ? (
+                  <button
+                    onClick={handleDownloadPDFPreview}
+                    className="text-xs text-emerald-600 hover:text-emerald-800 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition-colors flex items-center gap-1"
+                    title="点击下载PDF"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    点击下载
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleExportPDF}
+                    disabled={isExportingPDF}
+                    className="text-xs text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="导出PDF"
+                  >
+                    {isExportingPDF ? (
+                      <>
+                        <svg className="h-4 w-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        生成中...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        导出PDF
+                      </>
+                    )}
+                  </button>
+                )}
                 <button onClick={onToggle} className="text-xs text-slate-500 hover:text-slate-700">
                   收起
                 </button>
@@ -676,6 +718,18 @@ function DetailModal({
   const [isEditing, setIsEditing] = useState(false);
   const [editingContent, setEditingContent] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
+  const [pdfDownloadUrl, setPdfDownloadUrl] = useState<string | null>(null);
+
+  // 当弹窗打开时，重置所有状态（不保存 PDF 链接）
+  useEffect(() => {
+    if (isOpen) {
+      setIsEditing(false);
+      setEditingContent("");
+      setIsExportingPDF(false);
+      setPdfDownloadUrl(null); // 每次打开都重置，不保存之前的 PDF 链接
+    }
+  }, [isOpen]);
 
   // 阻止背景页面滚动
   useEffect(() => {
@@ -748,9 +802,10 @@ function DetailModal({
       return;
     }
 
+    setIsExportingPDF(true);
+    setPdfDownloadUrl(null);
+    
     try {
-      showToast("正在生成PDF，请稍候...", "info");
-      
       const response = await fetch("/api/markdown-to-pdf", {
         method: "POST",
         headers: {
@@ -766,23 +821,36 @@ function DetailModal({
         throw new Error(errorData.message || "PDF生成失败");
       }
 
-      // 获取 PDF blob
-      const blob = await response.blob();
+      // 获取返回的 JSON 数据（包含 PDF 链接）
+      const data = await response.json();
       
-      // 创建下载链接
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `对比报告_${row.company || "未知"}_${new Date().toISOString().split("T")[0]}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
-
-      showToast("PDF导出成功", "success");
+      if (data.success && data.pdfUrl) {
+        // 保存 PDF 链接
+        setPdfDownloadUrl(data.pdfUrl);
+        // 提示用户生成成功，点击下载
+        showToast("PDF生成成功，点击下载", "success");
+        // 清除加载状态
+        setIsExportingPDF(false);
+      } else {
+        throw new Error(data.message || "未获取到 PDF 链接");
+      }
     } catch (error: any) {
       console.error("导出PDF失败:", error);
       showToast(`PDF导出失败: ${error.message || "未知错误"}`, "error");
+      // 清除加载状态
+      setIsExportingPDF(false);
+    }
+  };
+
+  const handleDownloadPDF = () => {
+    if (pdfDownloadUrl) {
+      const a = document.createElement("a");
+      a.href = pdfDownloadUrl;
+      a.download = `对比报告_${row?.company || "未知"}_${new Date().toISOString().split("T")[0]}.pdf`;
+      a.target = "_blank";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     }
   };
 
@@ -1288,15 +1356,39 @@ function DetailModal({
                   </svg>
                   编辑
                 </button>
-                <button
-                  onClick={handleExportPDF}
-                  className="text-sm text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors flex items-center gap-1"
-                >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  导出PDF
-                </button>
+                {pdfDownloadUrl ? (
+                  <button
+                    onClick={handleDownloadPDF}
+                    className="text-sm text-emerald-600 hover:text-emerald-800 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 transition-colors flex items-center gap-1"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    点击下载
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleExportPDF}
+                    disabled={isExportingPDF}
+                    className="text-sm text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isExportingPDF ? (
+                      <>
+                        <svg className="h-4 w-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        生成中...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        导出PDF
+                      </>
+                    )}
+                  </button>
+                )}
               </>
             ) : (
               <>
