@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useFileContext, ComparisonRow, ComparisonStructuredData, FileInfo } from "@/contexts/file-context";
 import { formatFileSize } from "@/lib/city-matcher";
 import { getCozeTokenClient } from "@/lib/coze-config";
+import { getCurrentUsername } from "@/lib/user";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import * as XLSX from "xlsx";
@@ -726,7 +727,12 @@ function DetailModal({
       // 从数据库获取原始 rawCozeResponse 数据
       let rawCozeData = null;
       try {
-        const recordResponse = await fetch(`/api/policy-compare-records?id=${row._id}`);
+        const username = getCurrentUsername();
+        if (!username) {
+          showToast("请先登录", "error");
+          return;
+        }
+        const recordResponse = await fetch(`/api/policy-compare-records?id=${row._id}&username=${encodeURIComponent(username)}`);
         const recordData = await recordResponse.json();
         if (recordData.success && recordData.data && recordData.data.rawCozeResponse) {
           try {
@@ -765,6 +771,11 @@ function DetailModal({
       }
 
       // 调用 API 更新数据库
+      const username = getCurrentUsername();
+      if (!username) {
+        showToast("请先登录", "error");
+        return;
+      }
       const response = await fetch("/api/policy-compare-records", {
         method: "PATCH",
         headers: {
@@ -773,6 +784,7 @@ function DetailModal({
         body: JSON.stringify({
           _id: row._id,
           rawCozeResponse: rawCozeData,
+          username,
         }),
       });
 
@@ -1071,7 +1083,12 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
   const loadHistoryRecords = async (page: number = 1) => {
     setIsLoadingHistory(true);
     try {
-      const response = await fetch(`/api/policy-compare-records?page=${page}&pageSize=500`);
+      const username = getCurrentUsername();
+      if (!username) {
+        showToast("请先登录", "error");
+        return;
+      }
+      const response = await fetch(`/api/policy-compare-records?page=${page}&pageSize=500&username=${encodeURIComponent(username)}`);
       const data = await response.json();
 
       if (data.success) {
@@ -1445,6 +1462,11 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         
         if (mode === "overwrite" && targetRow._id) {
           // 覆盖模式：更新现有记录
+          const username = getCurrentUsername();
+          if (!username) {
+            showToast("请先登录", "error");
+            return;
+          }
           const updateResponse = await fetch("/api/policy-compare-records", {
             method: "PATCH",
             headers: {
@@ -1460,6 +1482,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
               rawCozeResponse: rawCozeData,
               add_time: getBeijingTime(),
               isVerified: false, // 重新对比后重置审核状态
+              username,
             }),
           });
 
@@ -1469,7 +1492,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           }
           // 更新成功后，从数据库查询记录获取 createTime（createTime 不会因为更新而改变）
           try {
-            const recordResponse = await fetch(`/api/policy-compare-records?id=${targetRow._id}`);
+            const recordResponse = await fetch(`/api/policy-compare-records?id=${targetRow._id}&username=${encodeURIComponent(username)}`);
             const recordData = await recordResponse.json();
             if (recordData.success && recordData.data && recordData.data.createTime) {
               updateComparison(targetRowId, { 
@@ -1482,6 +1505,11 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           // _id保持不变
         } else {
           // 创建模式：创建新记录
+          const username = getCurrentUsername();
+          if (!username) {
+            showToast("请先登录", "error");
+            return;
+          }
           const saveResponse = await fetch("/api/policy-compare-records", {
             method: "POST",
             headers: {
@@ -1496,6 +1524,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
               status: "done",
               // 保存扣子API的原始返回数据（不解析，保持原始格式）
               rawCozeResponse: rawCozeData,
+              username,
             }),
           });
 
@@ -1504,7 +1533,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
             // 保存数据库的_id到ComparisonRow中，用于后续更新操作
             // 从数据库查询记录获取 createTime
             try {
-              const recordResponse = await fetch(`/api/policy-compare-records?id=${saveData._id}`);
+              const recordResponse = await fetch(`/api/policy-compare-records?id=${saveData._id}&username=${encodeURIComponent(username)}`);
               const recordData = await recordResponse.json();
               if (recordData.success && recordData.data && recordData.data.createTime) {
                 updateComparison(targetRowId, { 
@@ -1584,6 +1613,11 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
   // 审核记录
   const verifyRecord = async (_id: string, rowId: string) => {
     try {
+      const username = getCurrentUsername();
+      if (!username) {
+        showToast("请先登录", "error");
+        return;
+      }
       const response = await fetch("/api/policy-compare-records", {
         method: "PATCH",
         headers: {
@@ -1592,6 +1626,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         body: JSON.stringify({
           _id: _id, // 使用数据库的_id字段
           isVerified: true,
+          username,
         }),
       });
 

@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// 测试用的固定账号密码
-const TEST_USERNAME = "admin";
-const TEST_PASSWORD = "123456";
+// 账号配置（用户名和密码的映射）
+const USERS: Record<string, string> = {
+  admin: "admin6688",
+  test: "123456",
+};
 
 export async function POST(request: NextRequest) {
   try {
@@ -10,7 +12,7 @@ export async function POST(request: NextRequest) {
     const { username, password } = body;
 
     // 验证用户名和密码
-    if (username === TEST_USERNAME && password === TEST_PASSWORD) {
+    if (username && password && USERS[username] === password) {
       return NextResponse.json({
         success: true,
         message: "登录成功",

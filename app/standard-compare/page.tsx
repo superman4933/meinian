@@ -8,6 +8,7 @@ import {Login} from "@/components/login";
 import {formatFileSize, matchCityFromFileName} from "@/lib/city-matcher";
 import {getCozeTokenClient} from "@/lib/coze-config";
 import {showToast} from "@/lib/toast";
+import {getCurrentUsername} from "@/lib/user";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import * as XLSX from "xlsx";
@@ -136,9 +137,15 @@ export default function StandardComparePage() {
     const loadHistoryRecords = async (page: number = 1) => {
         setIsLoadingHistory(true);
         try {
+            const username = getCurrentUsername();
+            if (!username) {
+                showToast("请先登录", "error");
+                return;
+            }
             const params = new URLSearchParams({
                 page: page.toString(),
                 pageSize: "500",
+                username,
             });
             if (filterStatus === "已审核") {
                 params.append("isVerified", "true");
@@ -672,6 +679,11 @@ export default function StandardComparePage() {
                 },
             });
 
+            const username = getCurrentUsername();
+            if (!username) {
+                showToast("请先登录", "error");
+                return;
+            }
             const response = await fetch("/api/standard-compare", {
                 method: "POST",
                 headers: {
@@ -684,6 +696,7 @@ export default function StandardComparePage() {
                     fileName,
                     mode,
                     recordId,
+                    username,
                 }),
             });
 
@@ -1201,10 +1214,15 @@ export default function StandardComparePage() {
         const filesWithoutId = selectedFiles.filter((file) => !file._id);
 
         // 删除有数据库_id的记录
+        const username = getCurrentUsername();
+        if (!username) {
+            showToast("请先登录", "error");
+            return;
+        }
         const deletePromises = filesWithId.map(async (file) => {
             try {
                 const response = await fetch(
-                    `/api/standard-compare-records?id=${encodeURIComponent(file._id!)}`,
+                    `/api/standard-compare-records?id=${encodeURIComponent(file._id!)}&username=${encodeURIComponent(username)}`,
                     {
                         method: "DELETE",
                     }

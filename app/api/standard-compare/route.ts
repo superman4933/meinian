@@ -208,13 +208,23 @@ async function callCozeWorkflow(
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { file_url, city, fileName, mode, recordId } = body;
+    const { file_url, city, fileName, mode, recordId, username } = body;
 
     if (!file_url || typeof file_url !== 'string') {
       return NextResponse.json(
         {
           success: false,
           message: "缺少 file_url 参数",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!username) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "缺少用户名参数",
         },
         { status: 400 }
       );
@@ -351,47 +361,72 @@ export async function POST(request: NextRequest) {
           return beijingTime.toISOString();
         };
 
+        let updateSuccess = false;
+        
         if (mode === "overwrite" && recordId) {
           // 覆盖模式：更新现有记录
           console.log("覆盖模式 - 更新记录:", { recordId });
-          const updateData: any = {
-            city,
-            fileName,
-            fileUrl: file_url,
-            standardItems: structuredData ? JSON.stringify(structuredData) : null,
-            rawCozeResponse: JSON.stringify(data),
-            add_time: getBeijingTime(),
-            isVerified: false, // 重置审核状态
-            updateTime: new Date().toISOString(),
-          };
-
-          console.log("更新数据:", {
-            _id: recordId,
-            city,
-            fileName,
-            fileUrl: file_url,
-            hasStandardItems: !!structuredData,
-            standardItemsLength: Array.isArray(structuredData) ? structuredData.length : 0,
-          });
-
-          const updateResult: any = await db.collection(COLLECTION_NAME).doc(recordId).update(updateData);
           
-          console.log("更新结果:", updateResult);
-          
-          if (typeof updateResult.code === 'string') {
-            console.error("❌ 更新记录失败:", {
-              code: updateResult.code,
-              message: updateResult.message,
-              result: updateResult,
-            });
+          // 先查询记录，验证是否属于当前用户
+          const recordResult: any = await db
+            .collection(COLLECTION_NAME)
+            .doc(recordId)
+            .get();
+
+          if (typeof recordResult.code === 'string' || !recordResult.data || recordResult.data.length === 0) {
+            console.error("❌ 记录不存在:", { recordId });
+            // 记录不存在，继续执行创建模式
           } else {
-            console.log("✅ 数据库更新成功:", { 
-              _id: recordId,
-              updated: updateResult.updated || 0,
-            });
-            result._id = recordId; // 返回记录ID
+            const record = recordResult.data[0];
+            if (record.username !== username) {
+              console.error("❌ 无权更新此记录:", { recordId, recordUsername: record.username, currentUsername: username });
+              // 无权更新，继续执行创建模式
+            } else {
+              // 验证通过，执行更新
+              const updateData: any = {
+                city,
+                fileName,
+                fileUrl: file_url,
+                standardItems: structuredData ? JSON.stringify(structuredData) : null,
+                rawCozeResponse: JSON.stringify(data),
+                add_time: getBeijingTime(),
+                isVerified: false, // 重置审核状态
+                updateTime: new Date().toISOString(),
+              };
+
+              console.log("更新数据:", {
+                _id: recordId,
+                city,
+                fileName,
+                fileUrl: file_url,
+                hasStandardItems: !!structuredData,
+                standardItemsLength: Array.isArray(structuredData) ? structuredData.length : 0,
+              });
+
+              const updateResult: any = await db.collection(COLLECTION_NAME).doc(recordId).update(updateData);
+          
+              console.log("更新结果:", updateResult);
+              
+              if (typeof updateResult.code === 'string') {
+                console.error("❌ 更新记录失败:", {
+                  code: updateResult.code,
+                  message: updateResult.message,
+                  result: updateResult,
+                });
+              } else {
+                console.log("✅ 数据库更新成功:", { 
+                  _id: recordId,
+                  updated: updateResult.updated || 0,
+                });
+                result._id = recordId; // 返回记录ID
+                updateSuccess = true; // 标记更新成功
+              }
+            }
           }
-        } else {
+        }
+        
+        // 如果更新失败或没有 recordId，执行创建模式
+        if (!updateSuccess) {
           // 创建模式：新建记录
           console.log("创建模式 - 新建记录");
           const record: any = {
@@ -403,6 +438,7 @@ export async function POST(request: NextRequest) {
             rawCozeResponse: JSON.stringify(data),
             add_time: getBeijingTime(),
             isVerified: false,
+            username, // 保存用户名
             createTime: new Date().toISOString(),
             updateTime: new Date().toISOString(),
           };

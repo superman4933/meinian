@@ -239,7 +239,7 @@ export function Login({ onLoginSuccess }: LoginProps) {
               />
             </svg>
             <span className="text-xs text-slate-700 font-medium">
-              测试账号：<span className="text-blue-700 font-semibold">admin</span> / 
+              测试账号：<span className="text-blue-700 font-semibold">test  </span> 
               密码：<span className="text-blue-700 font-semibold">123456</span>
             </span>
           </div>

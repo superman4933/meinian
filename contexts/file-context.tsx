@@ -222,11 +222,14 @@ export function FileProvider({ children }: { children: ReactNode }) {
       // 如果存在_id，删除数据库记录
       if (comparison._id) {
         const recordId = comparison._id; // 此时已经确认 _id 存在
-        fetch(`/api/policy-compare-records?id=${recordId}`, {
-          method: "DELETE",
-        }).catch((error) => {
-          console.error("删除数据库记录失败:", error);
-        });
+        const username = typeof window !== "undefined" ? localStorage.getItem("savedUsername") : null;
+        if (username) {
+          fetch(`/api/policy-compare-records?id=${recordId}&username=${encodeURIComponent(username)}`, {
+            method: "DELETE",
+          }).catch((error) => {
+            console.error("删除数据库记录失败:", error);
+          });
+        }
       }
 
       // 从列表中移除

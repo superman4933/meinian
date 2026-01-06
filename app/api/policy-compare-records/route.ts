@@ -41,11 +41,19 @@ export async function POST(request: NextRequest) {
       newFileUrl,
       status = "done", // 现在只有done状态（对比完成后才保存）
       rawCozeResponse, // 扣子API的原始返回数据
+      username, // 用户名（必填）
     } = body;
 
     if (!company || !oldFileName || !newFileName) {
       return NextResponse.json(
         { success: false, message: "缺少必要参数" },
+        { status: 400 }
+      );
+    }
+
+    if (!username) {
+      return NextResponse.json(
+        { success: false, message: "缺少用户名参数" },
         { status: 400 }
       );
     }
@@ -70,6 +78,7 @@ export async function POST(request: NextRequest) {
       rawCozeResponse: rawCozeResponse ? JSON.stringify(rawCozeResponse) : null, // 保存原始数据为JSON字符串
       add_time: getBeijingTime(), // 对比时间（北京时间）
       isVerified: false, // 是否已审核确认（默认未审核）
+      username, // 保存用户名
       createTime: new Date().toISOString(),
       updateTime: new Date().toISOString(),
     };
@@ -127,6 +136,7 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const _id = searchParams.get("id"); // 数据库的_id
+    const username = searchParams.get("username"); // 用户名
 
     if (!_id) {
       return NextResponse.json(
@@ -135,7 +145,35 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    if (!username) {
+      return NextResponse.json(
+        { success: false, message: "缺少用户名参数" },
+        { status: 400 }
+      );
+    }
+
     const db = getDatabase();
+
+    // 先查询记录，验证是否属于当前用户
+    const recordResult: any = await db
+      .collection(COLLECTION_NAME)
+      .doc(_id)
+      .get();
+
+    if (typeof recordResult.code === 'string' || !recordResult.data || recordResult.data.length === 0) {
+      return NextResponse.json(
+        { success: false, message: "记录不存在" },
+        { status: 404 }
+      );
+    }
+
+    const record = recordResult.data[0];
+    if (record.username !== username) {
+      return NextResponse.json(
+        { success: false, message: "无权删除此记录" },
+        { status: 403 }
+      );
+    }
 
     // 使用SDK删除记录（通过_id）
     const result: any = await db
@@ -196,6 +234,7 @@ export async function PATCH(request: NextRequest) {
       newFileUrl,
       rawCozeResponse,
       add_time,
+      username, // 用户名（必填）
     } = body; // 使用数据库的_id字段
 
     if (!_id) {
@@ -205,7 +244,35 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    if (!username) {
+      return NextResponse.json(
+        { success: false, message: "缺少用户名参数" },
+        { status: 400 }
+      );
+    }
+
     const db = getDatabase();
+
+    // 先查询记录，验证是否属于当前用户
+    const recordResult: any = await db
+      .collection(COLLECTION_NAME)
+      .doc(_id)
+      .get();
+
+    if (typeof recordResult.code === 'string' || !recordResult.data || recordResult.data.length === 0) {
+      return NextResponse.json(
+        { success: false, message: "记录不存在" },
+        { status: 404 }
+      );
+    }
+
+    const record = recordResult.data[0];
+    if (record.username !== username) {
+      return NextResponse.json(
+        { success: false, message: "无权更新此记录" },
+        { status: 403 }
+      );
+    }
 
     // 构建更新数据
     const updateData: any = {
@@ -320,6 +387,15 @@ export async function GET(request: NextRequest) {
 
     const db = getDatabase();
 
+    const username = searchParams.get("username"); // 用户名
+
+    if (!username) {
+      return NextResponse.json(
+        { success: false, message: "缺少用户名参数" },
+        { status: 400 }
+      );
+    }
+
     if (recordId) {
       // 查询单个记录（通过数据库的_id）
       const result: any = await db
@@ -348,19 +424,32 @@ export async function GET(request: NextRequest) {
         );
       }
 
+      const record = result.data[0];
+      // 验证记录是否属于当前用户
+      if (record.username !== username) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "无权访问此记录",
+          },
+          { status: 403 }
+        );
+      }
+
       return NextResponse.json({
         success: true,
-        data: result.data[0],
+        data: record,
       });
     } else {
       // 检查是否要获取所有记录（用于导出）
       const getAll = searchParams.get("all") === "true";
       
-      // 分页查询所有记录（只查询status为done的记录）
+      // 分页查询所有记录（只查询status为done且属于当前用户的记录）
       let query = db
         .collection(COLLECTION_NAME)
         .where({
           status: "done",
+          username: username, // 只查询当前用户的记录
         })
         .orderBy("createTime", "desc");
       
@@ -408,6 +497,7 @@ export async function GET(request: NextRequest) {
         .collection(COLLECTION_NAME)
         .where({
           status: "done",
+          username: username, // 只查询当前用户的记录
         });
       
       // 获取总数（通过查询所有记录，但只取第一个字段来获取总数）
