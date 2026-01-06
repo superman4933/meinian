@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Fragment, useRef, useEffect } from "react";
+import { useState, Fragment, useRef, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useFileContext, ComparisonRow, ComparisonStructuredData, FileInfo } from "@/contexts/file-context";
 import { formatFileSize } from "@/lib/city-matcher";
@@ -625,11 +625,17 @@ function DetailModal({
   row,
   isOpen,
   onClose,
+  onUpdate,
 }: {
   row: ComparisonRow | null;
   isOpen: boolean;
   onClose: () => void;
+  onUpdate?: (updatedRow: ComparisonRow) => void;
 }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingContent, setEditingContent] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
   // 阻止背景页面滚动
   useEffect(() => {
     if (isOpen) {
@@ -645,26 +651,40 @@ function DetailModal({
     }
   }, [isOpen]);
 
-  if (!isOpen || !row) return null;
+  // 计算 markdown 内容
+  const markdownContent = useMemo(() => {
+    if (!row) return "";
+    
+    let content = "";
+    let isJsonFormat = row.isJsonFormat || false;
 
-  let markdownContent = "";
-  let isJsonFormat = row.isJsonFormat || false;
-
-  if (isJsonFormat && row.comparisonStructured) {
-    markdownContent = row.comparisonStructured.detailed || "";
-  } else if (typeof row.comparisonResult === "string") {
-    markdownContent = row.comparisonResult;
-  } else if (row.comparisonResult && typeof row.comparisonResult === "object") {
-    if ((row.comparisonResult as any).markdown) {
-      markdownContent = (row.comparisonResult as any).markdown;
-    } else if ((row.comparisonResult as any).data) {
-      markdownContent = typeof (row.comparisonResult as any).data === "string"
-        ? (row.comparisonResult as any).data
-        : JSON.stringify((row.comparisonResult as any).data);
-    } else {
-      markdownContent = JSON.stringify(row.comparisonResult, null, 2);
+    if (isJsonFormat && row.comparisonStructured) {
+      content = row.comparisonStructured.detailed || "";
+    } else if (typeof row.comparisonResult === "string") {
+      content = row.comparisonResult;
+    } else if (row.comparisonResult && typeof row.comparisonResult === "object") {
+      if ((row.comparisonResult as any).markdown) {
+        content = (row.comparisonResult as any).markdown;
+      } else if ((row.comparisonResult as any).data) {
+        content = typeof (row.comparisonResult as any).data === "string"
+          ? (row.comparisonResult as any).data
+          : JSON.stringify((row.comparisonResult as any).data);
+      } else {
+        content = JSON.stringify(row.comparisonResult, null, 2);
+      }
     }
-  }
+    
+    return content;
+  }, [row]);
+
+  // 初始化编辑内容
+  useEffect(() => {
+    if (isEditing && !editingContent && markdownContent) {
+      setEditingContent(markdownContent);
+    }
+  }, [isEditing, markdownContent]);
+
+  if (!isOpen || !row) return null;
 
   const handleCopy = async () => {
     try {
@@ -685,37 +705,219 @@ function DetailModal({
     showToast("PDF导出功能暂时不可用，正在优化中", "info");
   };
 
+  const handleEdit = () => {
+    setEditingContent(markdownContent);
+    setIsEditing(true);
+  };
+
+  const handleCancel = () => {
+    setIsEditing(false);
+    setEditingContent("");
+  };
+
+  const handleSave = async () => {
+    if (!row._id) {
+      showToast("无法保存：缺少记录ID", "error");
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      // 从数据库获取原始 rawCozeResponse 数据
+      let rawCozeData = null;
+      try {
+        const recordResponse = await fetch(`/api/policy-compare-records?id=${row._id}`);
+        const recordData = await recordResponse.json();
+        if (recordData.success && recordData.data && recordData.data.rawCozeResponse) {
+          try {
+            rawCozeData = typeof recordData.data.rawCozeResponse === 'string' 
+              ? JSON.parse(recordData.data.rawCozeResponse) 
+              : recordData.data.rawCozeResponse;
+          } catch (e) {
+            console.error("解析原始扣子数据失败:", e);
+          }
+        }
+      } catch (e) {
+        console.error("获取数据库记录失败:", e);
+      }
+
+      // 如果没有原始数据，尝试从 comparisonStructured 构建
+      if (!rawCozeData && row.comparisonStructured) {
+        rawCozeData = {
+          structured: {
+            ...row.comparisonStructured,
+            detailed: editingContent,
+          },
+        };
+      } else if (rawCozeData) {
+        // 更新 detailed 字段
+        if (!rawCozeData.structured) {
+          rawCozeData.structured = {};
+        }
+        rawCozeData.structured.detailed = editingContent;
+      } else {
+        // 如果都没有，创建一个新的结构
+        rawCozeData = {
+          structured: {
+            detailed: editingContent,
+          },
+        };
+      }
+
+      // 调用 API 更新数据库
+      const response = await fetch("/api/policy-compare-records", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          _id: row._id,
+          rawCozeResponse: rawCozeData,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        showToast("保存成功", "success");
+        setIsEditing(false);
+        
+        // 更新本地 row 数据
+        if (onUpdate && row) {
+          const updatedRow: ComparisonRow = {
+            ...row,
+            comparisonStructured: rawCozeData.structured,
+            isJsonFormat: true,
+          };
+          onUpdate(updatedRow);
+        }
+      } else {
+        showToast(data.message || "保存失败", "error");
+      }
+    } catch (error: any) {
+      console.error("保存失败:", error);
+      showToast("保存失败：" + (error.message || "未知错误"), "error");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const markdownComponents = {
+    h1: ({ node, ...props }: any) => <h1 className="text-xl font-bold mt-4 mb-2" {...props} />,
+    h2: ({ node, ...props }: any) => <h2 className="text-lg font-semibold mt-3 mb-2" {...props} />,
+    h3: ({ node, ...props }: any) => <h3 className="text-base font-semibold mt-2 mb-1" {...props} />,
+    h4: ({ node, ...props }: any) => <h4 className="text-sm font-semibold mt-2 mb-1" {...props} />,
+    p: ({ node, ...props }: any) => <p className="mb-2 leading-relaxed" {...props} />,
+    ul: ({ node, ...props }: any) => <ul className="list-disc list-inside mb-2 space-y-1" {...props} />,
+    ol: ({ node, ...props }: any) => <ol className="list-decimal list-inside mb-2 space-y-1" {...props} />,
+    li: ({ node, ...props }: any) => <li className="ml-4" {...props} />,
+    strong: ({ node, ...props }: any) => <strong className="font-semibold" {...props} />,
+    em: ({ node, ...props }: any) => <em className="italic" {...props} />,
+    code: ({ node, ...props }: any) => (
+      <code className="bg-slate-100 px-1 py-0.5 rounded text-xs font-mono" {...props} />
+    ),
+    pre: ({ node, ...props }: any) => (
+      <pre className="bg-slate-100 p-3 rounded overflow-x-auto mb-2" {...props} />
+    ),
+    blockquote: ({ node, ...props }: any) => (
+      <blockquote className="border-l-4 border-slate-300 pl-4 italic my-2" {...props} />
+    ),
+    table: ({ node, ...props }: any) => (
+      <div className="overflow-x-auto my-4">
+        <table className="min-w-full border-collapse border border-slate-300 text-sm" {...props} />
+      </div>
+    ),
+    thead: ({ node, ...props }: any) => (
+      <thead className="bg-slate-100" {...props} />
+    ),
+    tbody: ({ node, ...props }: any) => (
+      <tbody {...props} />
+    ),
+    tr: ({ node, ...props }: any) => (
+      <tr className="border-b border-slate-200 hover:bg-slate-50" {...props} />
+    ),
+    th: ({ node, ...props }: any) => (
+      <th className="border border-slate-300 px-4 py-2 text-left font-semibold text-slate-900" {...props} />
+    ),
+    td: ({ node, ...props }: any) => (
+      <td className="border border-slate-300 px-4 py-2 text-slate-700" {...props} />
+    ),
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
     >
       <div
-        className="relative w-full max-w-4xl max-h-[90vh] bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col"
+        className={`relative w-full ${isEditing ? 'max-w-7xl' : 'max-w-4xl'} max-h-[90vh] bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col`}
       >
         {/* 头部 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50">
           <h2 className="text-lg font-semibold text-slate-900">
-            对比详情 - {row.company.startsWith("未知_") ? "未知" : row.company}
+            {isEditing ? "编辑对比详情" : "对比详情"} - {row.company.startsWith("未知_") ? "未知" : row.company}
           </h2>
           <div className="flex items-center gap-2">
-            <button
-              onClick={handleCopy}
-              className="text-sm text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors flex items-center gap-1"
-            >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-              复制
-            </button>
-            <button
-              onClick={handleExportPDF}
-              className="text-sm text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors flex items-center gap-1"
-            >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              导出PDF
-            </button>
+            {!isEditing ? (
+              <>
+                <button
+                  onClick={handleCopy}
+                  className="text-sm text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors flex items-center gap-1"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  复制
+                </button>
+                <button
+                  onClick={handleEdit}
+                  className="text-sm text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors flex items-center gap-1"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  编辑
+                </button>
+                <button
+                  onClick={handleExportPDF}
+                  className="text-sm text-blue-600 hover:text-blue-800 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors flex items-center gap-1"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  导出PDF
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className="text-sm text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 px-4 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                >
+                  {isSaving ? (
+                    <>
+                      <svg className="h-4 w-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      保存中...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                      </svg>
+                      保存
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={handleCancel}
+                  disabled={isSaving}
+                  className="text-sm text-slate-600 hover:text-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 transition-colors"
+                >
+                  取消
+                </button>
+              </>
+            )}
             <button
               onClick={onClose}
               className="text-slate-500 hover:text-slate-700 p-2"
@@ -728,58 +930,55 @@ function DetailModal({
         </div>
 
         {/* 内容区域 */}
-        <div className="flex-1 overflow-y-auto px-6 py-4">
-          <div className="prose prose-sm max-w-none text-slate-700">
-            <div className="overflow-x-auto">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                  h1: ({ node, ...props }) => <h1 className="text-xl font-bold mt-4 mb-2" {...props} />,
-                  h2: ({ node, ...props }) => <h2 className="text-lg font-semibold mt-3 mb-2" {...props} />,
-                  h3: ({ node, ...props }) => <h3 className="text-base font-semibold mt-2 mb-1" {...props} />,
-                  h4: ({ node, ...props }) => <h4 className="text-sm font-semibold mt-2 mb-1" {...props} />,
-                  p: ({ node, ...props }) => <p className="mb-2 leading-relaxed" {...props} />,
-                  ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2 space-y-1" {...props} />,
-                  ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2 space-y-1" {...props} />,
-                  li: ({ node, ...props }) => <li className="ml-4" {...props} />,
-                  strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
-                  em: ({ node, ...props }) => <em className="italic" {...props} />,
-                  code: ({ node, ...props }) => (
-                    <code className="bg-slate-100 px-1 py-0.5 rounded text-xs font-mono" {...props} />
-                  ),
-                  pre: ({ node, ...props }) => (
-                    <pre className="bg-slate-100 p-3 rounded overflow-x-auto mb-2" {...props} />
-                  ),
-                  blockquote: ({ node, ...props }) => (
-                    <blockquote className="border-l-4 border-slate-300 pl-4 italic my-2" {...props} />
-                  ),
-                  table: ({ node, ...props }) => (
-                    <div className="overflow-x-auto my-4">
-                      <table className="min-w-full border-collapse border border-slate-300 text-sm" {...props} />
+        {isEditing ? (
+          /* 编辑模式：分屏显示 */
+          <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
+            <div className="flex h-full divide-x divide-slate-200 min-h-0 flex-1">
+              {/* 左侧：Markdown 编辑区 */}
+              <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+                <div className="flex-shrink-0 px-4 py-2 bg-slate-50 border-b border-slate-200">
+                  <h3 className="text-sm font-medium text-slate-700">Markdown 编辑</h3>
+                </div>
+                <div className="flex-1 overflow-hidden min-h-0">
+                  <textarea
+                    value={editingContent}
+                    onChange={(e) => setEditingContent(e.target.value)}
+                    className="w-full h-full px-4 py-3 font-mono text-sm border-0 resize-none focus:outline-none focus:ring-0 overflow-y-auto"
+                    placeholder="在此输入 Markdown 内容..."
+                    style={{ fontFamily: 'Consolas, Monaco, "Courier New", monospace' }}
+                  />
+                </div>
+              </div>
+
+              {/* 右侧：预览区 */}
+              <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+                <div className="flex-shrink-0 px-4 py-2 bg-slate-50 border-b border-slate-200">
+                  <h3 className="text-sm font-medium text-slate-700">预览效果</h3>
+                </div>
+                <div className="flex-1 overflow-y-auto px-6 py-4 min-h-0">
+                  <div className="prose prose-sm max-w-none text-slate-700">
+                    <div className="overflow-x-auto">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                        {editingContent || "暂无内容"}
+                      </ReactMarkdown>
                     </div>
-                  ),
-                  thead: ({ node, ...props }) => (
-                    <thead className="bg-slate-100" {...props} />
-                  ),
-                  tbody: ({ node, ...props }) => (
-                    <tbody {...props} />
-                  ),
-                  tr: ({ node, ...props }) => (
-                    <tr className="border-b border-slate-200 hover:bg-slate-50" {...props} />
-                  ),
-                  th: ({ node, ...props }) => (
-                    <th className="border border-slate-300 px-4 py-2 text-left font-semibold text-slate-900" {...props} />
-                  ),
-                  td: ({ node, ...props }) => (
-                    <td className="border border-slate-300 px-4 py-2 text-slate-700" {...props} />
-                  ),
-                }}
-              >
-                {markdownContent || "暂无详细内容"}
-              </ReactMarkdown>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        ) : (
+          /* 查看模式：显示 Markdown */
+          <div className="flex-1 overflow-y-auto overflow-x-hidden px-6 py-4 min-h-0">
+            <div className="prose prose-sm max-w-none text-slate-700">
+              <div className="overflow-x-auto">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                  {markdownContent || "暂无详细内容"}
+                </ReactMarkdown>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2659,6 +2858,18 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       row={detailModal.row}
       isOpen={detailModal.open}
       onClose={() => setDetailModal({ open: false, row: null })}
+      onUpdate={(updatedRow) => {
+        // 更新 detailModal 中的 row
+        setDetailModal(prev => ({ ...prev, row: updatedRow }));
+        // 更新 comparisons 数组中的对应项
+        const targetComparison = comparisons.find(c => c.id === updatedRow.id);
+        if (targetComparison) {
+          updateComparison(updatedRow.id, {
+            comparisonStructured: updatedRow.comparisonStructured,
+            isJsonFormat: updatedRow.isJsonFormat,
+          });
+        }
+      }}
     />
 
     {/* 对比模式选择对话框 */}
