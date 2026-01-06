@@ -230,9 +230,49 @@ function PreviewRow({
       }
     };
 
-    // 导出PDF（功能暂时移除）
-    const handleExportPDF = () => {
-      showToast("PDF导出功能暂时不可用，正在优化中", "info");
+    // 导出PDF
+    const handleExportPDF = async () => {
+      if (!markdownContent) {
+        showToast("没有可导出的内容", "error");
+        return;
+      }
+
+      try {
+        showToast("正在生成PDF，请稍候...", "info");
+        
+        const response = await fetch("/api/markdown-to-pdf", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            markdown: markdownContent,
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || "PDF生成失败");
+        }
+
+        // 获取 PDF blob
+        const blob = await response.blob();
+        
+        // 创建下载链接
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `对比报告_${row.company || "未知"}_${new Date().toISOString().split("T")[0]}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+        showToast("PDF导出成功", "success");
+      } catch (error: any) {
+        console.error("导出PDF失败:", error);
+        showToast(`PDF导出失败: ${error.message || "未知错误"}`, "error");
+      }
     };
 
 
@@ -702,8 +742,48 @@ function DetailModal({
     }
   };
 
-  const handleExportPDF = () => {
-    showToast("PDF导出功能暂时不可用，正在优化中", "info");
+  const handleExportPDF = async () => {
+    if (!markdownContent) {
+      showToast("没有可导出的内容", "error");
+      return;
+    }
+
+    try {
+      showToast("正在生成PDF，请稍候...", "info");
+      
+      const response = await fetch("/api/markdown-to-pdf", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          markdown: markdownContent,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "PDF生成失败");
+      }
+
+      // 获取 PDF blob
+      const blob = await response.blob();
+      
+      // 创建下载链接
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `对比报告_${row.company || "未知"}_${new Date().toISOString().split("T")[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+      showToast("PDF导出成功", "success");
+    } catch (error: any) {
+      console.error("导出PDF失败:", error);
+      showToast(`PDF导出失败: ${error.message || "未知错误"}`, "error");
+    }
   };
 
   const handleEdit = () => {
