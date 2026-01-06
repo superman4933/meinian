@@ -1209,7 +1209,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
             comparisonStructured: data.structured || undefined,
             isJsonFormat: data.isJsonFormat || false,
             comparisonError: undefined,
-            compareTime: getBeijingTime(),
+            // compareTime 将在保存到数据库后从数据库获取
             isVerified: false,
           });
           return newMap;
@@ -1221,7 +1221,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           comparisonStructured: data.structured || undefined,
           isJsonFormat: data.isJsonFormat || false,
           comparisonError: undefined,
-          compareTime: getBeijingTime(), // 当前对比时间（北京时间）
+          // compareTime 将在保存到数据库后从数据库获取
           isVerified: false, // 默认未审核
         });
       }
@@ -1255,6 +1255,18 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           if (!updateData.success) {
             throw new Error(updateData.message || "更新记录失败");
           }
+          // 更新成功后，从数据库查询记录获取 createTime（createTime 不会因为更新而改变）
+          try {
+            const recordResponse = await fetch(`/api/policy-compare-records?id=${targetRow._id}`);
+            const recordData = await recordResponse.json();
+            if (recordData.success && recordData.data && recordData.data.createTime) {
+              updateComparison(targetRowId, { 
+                compareTime: recordData.data.createTime, // 使用数据库的创建时间
+              });
+            }
+          } catch (e) {
+            console.error("查询记录创建时间失败:", e);
+          }
           // _id保持不变
         } else {
           // 创建模式：创建新记录
@@ -1278,7 +1290,22 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           const saveData = await saveResponse.json();
           if (saveData.success && saveData._id) {
             // 保存数据库的_id到ComparisonRow中，用于后续更新操作
-            updateComparison(targetRowId, { _id: saveData._id });
+            // 从数据库查询记录获取 createTime
+            try {
+              const recordResponse = await fetch(`/api/policy-compare-records?id=${saveData._id}`);
+              const recordData = await recordResponse.json();
+              if (recordData.success && recordData.data && recordData.data.createTime) {
+                updateComparison(targetRowId, { 
+                  _id: saveData._id,
+                  compareTime: recordData.data.createTime, // 使用数据库的创建时间
+                });
+              } else {
+                updateComparison(targetRowId, { _id: saveData._id });
+              }
+            } catch (e) {
+              console.error("查询记录创建时间失败:", e);
+              updateComparison(targetRowId, { _id: saveData._id });
+            }
           }
         }
       } catch (saveError) {
@@ -1562,7 +1589,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       isJsonFormat: comparingState?.isJsonFormat !== undefined ? comparingState.isJsonFormat : isJsonFormat,
       comparisonError: comparingState?.comparisonError,
       _id: record._id, // 直接使用数据库的_id字段
-      compareTime: comparingState?.compareTime || record.add_time || record.createTime, // 从数据库的add_time字段获取对比时间
+      compareTime: record.createTime, // 使用数据库的创建时间字段（北京时间）
       isVerified: comparingState?.isVerified !== undefined ? comparingState.isVerified : (record.isVerified || false), // 是否已审核确认
     };
   });

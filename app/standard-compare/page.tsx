@@ -184,7 +184,7 @@ export default function StandardComparePage() {
                         compareResult: historyComparingStates.current.get(record._id)?.compareResult || standardItems,
                         compareProgress: "对比完成",
                         _id: record._id,
-                        compareTime: record.add_time,
+                        compareTime: record.createTime, // 使用数据库的创建时间字段（北京时间）
                         isVerified: record.isVerified || false,
                     };
                 });
@@ -761,23 +761,84 @@ export default function StandardComparePage() {
                     return;
                 }
 
-                // 更新文件状态
-                setFiles((prev) =>
-                    prev.map((f) =>
-                        f.id === fileId
-                            ? {
-                                ...f,
-                                compareStatus: "success" as const,
-                                compareResult: data.structured,
-                                compareProgress: "对比完成",
-                                compareTime: getBeijingTime(),
-                            }
-                            : f
-                    )
-                );
-                // 如果是历史记录模式，同时更新historyFiles状态
-                if (showHistory) {
-                    setHistoryFiles((prev) =>
+                // 如果接口返回了 _id，从数据库查询记录获取 createTime
+                if (data._id) {
+                    try {
+                        const recordResponse = await fetch(`/api/standard-compare-records?id=${data._id}`);
+                        const recordData = await recordResponse.json();
+                        const createTime = recordData.success && recordData.data ? recordData.data.createTime : null;
+                        
+                        // 更新文件状态，使用数据库的创建时间
+                        setFiles((prev) =>
+                            prev.map((f) =>
+                                f.id === fileId
+                                    ? {
+                                        ...f,
+                                        compareStatus: "success" as const,
+                                        compareResult: data.structured,
+                                        compareProgress: "对比完成",
+                                        compareTime: createTime || undefined, // 使用数据库的创建时间
+                                        _id: data._id,
+                                        isVerified: mode === "overwrite" ? false : f.isVerified, // 覆盖模式重置审核状态
+                                    }
+                                    : f
+                            )
+                        );
+                        // 如果是历史记录模式，同时更新historyFiles状态
+                        if (showHistory) {
+                            setHistoryFiles((prev) =>
+                                prev.map((f) =>
+                                    f.id === fileId
+                                        ? {
+                                            ...f,
+                                            compareStatus: "success" as const,
+                                            compareResult: data.structured,
+                                            compareProgress: "对比完成",
+                                            compareTime: createTime || undefined, // 使用数据库的创建时间
+                                            _id: data._id,
+                                            isVerified: mode === "overwrite" ? false : f.isVerified,
+                                        }
+                                        : f
+                                )
+                            );
+                        }
+                    } catch (e) {
+                        console.error("查询记录创建时间失败:", e);
+                        // 查询失败时，仍然更新状态但不设置时间
+                        setFiles((prev) =>
+                            prev.map((f) =>
+                                f.id === fileId
+                                    ? {
+                                        ...f,
+                                        compareStatus: "success" as const,
+                                        compareResult: data.structured,
+                                        compareProgress: "对比完成",
+                                        _id: data._id,
+                                        isVerified: mode === "overwrite" ? false : f.isVerified,
+                                    }
+                                    : f
+                            )
+                        );
+                        if (showHistory) {
+                            setHistoryFiles((prev) =>
+                                prev.map((f) =>
+                                    f.id === fileId
+                                        ? {
+                                            ...f,
+                                            compareStatus: "success" as const,
+                                            compareResult: data.structured,
+                                            compareProgress: "对比完成",
+                                            _id: data._id,
+                                            isVerified: mode === "overwrite" ? false : f.isVerified,
+                                        }
+                                        : f
+                                )
+                            );
+                        }
+                    }
+                } else {
+                    // 如果没有 _id，仍然更新状态但不设置时间
+                    setFiles((prev) =>
                         prev.map((f) =>
                             f.id === fileId
                                 ? {
@@ -785,41 +846,24 @@ export default function StandardComparePage() {
                                     compareStatus: "success" as const,
                                     compareResult: data.structured,
                                     compareProgress: "对比完成",
-                                    compareTime: getBeijingTime(),
                                 }
                                 : f
                         )
                     );
-                }
-
-                // 如果接口返回了 _id，更新前端状态（数据库已在接口中保存）
-                if (data._id) {
-                    setFiles((prev) =>
-                        prev.map((f) =>
-                            f.id === fileId
-                                ? {
-                                    ...f,
-                                    _id: data._id,
-                                    isVerified: mode === "overwrite" ? false : f.isVerified, // 覆盖模式重置审核状态
-                                }
-                                : f
-                        )
-                    );
-                    // 如果是历史记录模式，同时更新historyFiles状态
                     if (showHistory) {
                         setHistoryFiles((prev) =>
                             prev.map((f) =>
                                 f.id === fileId
                                     ? {
                                         ...f,
-                                        _id: data._id,
-                                        isVerified: mode === "overwrite" ? false : f.isVerified,
+                                        compareStatus: "success" as const,
+                                        compareResult: data.structured,
+                                        compareProgress: "对比完成",
                                     }
                                     : f
                             )
                         );
                     }
-                    console.log("数据库保存成功，已更新前端状态:", { _id: data._id, fileId });
                 }
             } else {
                 const errorMessage = data.message || (data.structured ? "返回数据格式不正确" : "对比失败");
@@ -1078,16 +1122,18 @@ export default function StandardComparePage() {
         }
     };
 
-    // 格式化对比时间
+    // 格式化对比时间（北京时间）
     const formatCompareTime = (time?: string) => {
         if (!time) return "-";
         try {
             const date = new Date(time);
-            const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, "0");
-            const day = String(date.getDate()).padStart(2, "0");
-            const hours = String(date.getHours()).padStart(2, "0");
-            const minutes = String(date.getMinutes()).padStart(2, "0");
+            // createTime 已经是 UTC 时间，需要转换为北京时间（UTC+8）
+            const beijingTime = new Date(date.getTime() + (8 * 60 * 60 * 1000));
+            const year = beijingTime.getUTCFullYear();
+            const month = String(beijingTime.getUTCMonth() + 1).padStart(2, "0");
+            const day = String(beijingTime.getUTCDate()).padStart(2, "0");
+            const hours = String(beijingTime.getUTCHours()).padStart(2, "0");
+            const minutes = String(beijingTime.getUTCMinutes()).padStart(2, "0");
             return `${year}-${month}-${day} ${hours}:${minutes}`;
         } catch (e) {
             return "-";
