@@ -353,15 +353,26 @@ export async function GET(request: NextRequest) {
         data: result.data[0],
       });
     } else {
+      // 检查是否要获取所有记录（用于导出）
+      const getAll = searchParams.get("all") === "true";
+      
       // 分页查询所有记录（只查询status为done的记录）
-      const query = db
+      let query = db
         .collection(COLLECTION_NAME)
         .where({
           status: "done",
         })
-        .orderBy("createTime", "desc")
-        .skip(skip)
-        .limit(pageSize);
+        .orderBy("createTime", "desc");
+      
+      if (getAll) {
+        // 导出全部时，添加最大限制（防止一次性加载过多数据）
+        // 如果数据量超过1000条，建议分批导出或使用其他方式
+        const MAX_EXPORT_LIMIT = 1000;
+        query = query.limit(MAX_EXPORT_LIMIT);
+      } else {
+        // 正常分页查询
+        query = query.skip(skip).limit(pageSize);
+      }
 
       const result: any = await query.get();
 
@@ -374,6 +385,21 @@ export async function GET(request: NextRequest) {
           },
           { status: 500 }
         );
+      }
+
+      // 如果获取全部，直接返回数据，不需要分页信息
+      if (getAll) {
+        const returnedCount = result.data ? result.data.length : 0;
+        // 如果返回的数据量等于限制，可能还有更多数据
+        const hasMore = returnedCount >= 1000;
+        
+        return NextResponse.json({
+          success: true,
+          data: result.data || [],
+          total: returnedCount,
+          hasMore: hasMore,
+          message: hasMore ? "数据量较大，仅返回前1000条记录。如需导出全部数据，请联系管理员。" : undefined,
+        });
       }
 
       // 查询总数（先查询所有记录，然后计算总数）

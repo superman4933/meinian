@@ -7,6 +7,9 @@ import { formatFileSize } from "@/lib/city-matcher";
 import { getCozeTokenClient } from "@/lib/coze-config";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import * as XLSX from "xlsx";
+// @ts-ignore - xlsx-style类型定义可能不完整
+import * as XLSXStyle from "xlsx-style";
 
 // Toast提示工具函数
 function showToast(message: string, type: "success" | "error" | "info" = "info") {
@@ -856,7 +859,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
   const loadHistoryRecords = async (page: number = 1) => {
     setIsLoadingHistory(true);
     try {
-      const response = await fetch(`/api/policy-compare-records?page=${page}&pageSize=100`);
+      const response = await fetch(`/api/policy-compare-records?page=${page}&pageSize=500`);
       const data = await response.json();
 
       if (data.success) {
@@ -1676,23 +1679,205 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
     }
   };
 
-  // 导出选中（暂时只显示提示）
-  const handleExportSelected = () => {
+  // 格式化对比时间
+  const formatCompareTime = (timeStr?: string) => {
+    if (!timeStr) return "";
+    try {
+      const date = new Date(timeStr);
+      // 转换为北京时间（UTC+8）
+      const beijingTime = new Date(date.getTime() + (8 * 60 * 60 * 1000));
+      const year = beijingTime.getUTCFullYear();
+      const month = String(beijingTime.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(beijingTime.getUTCDate()).padStart(2, '0');
+      const hours = String(beijingTime.getUTCHours()).padStart(2, '0');
+      const minutes = String(beijingTime.getUTCMinutes()).padStart(2, '0');
+      return `${year}-${month}-${day} ${hours}:${minutes}`;
+    } catch (e) {
+      return "";
+    }
+  };
+
+  // 将ComparisonRow数据转换为Excel行数据
+  const convertRowToExcelData = (row: ComparisonRow) => {
+    const displayCompany = row.company.startsWith("未知_") ? "未知" : row.company;
+    const compareTime = formatCompareTime(row.compareTime);
+    
+    // 获取文件URL和名称（用于超链接）
+    const oldFileUrl = row.lastYearFile?.file_url || row.lastYearFile?.url || "";
+    const oldFileName = row.lastYearFile?.name || "";
+    const newFileUrl = row.thisYearFile?.file_url || row.thisYearFile?.url || "";
+    const newFileName = row.thisYearFile?.name || "";
+
+    // 提取结构化数据
+    let addedContent = "";
+    let modifiedContent = "";
+    let deletedContent = "";
+    let summary = "";
+
+    if (row.comparisonStructured && row.isJsonFormat) {
+      const structured = row.comparisonStructured;
+      summary = structured.summary || "";
+      // 使用换行符分隔，使Excel中显示为多行
+      addedContent = Array.isArray(structured.added) ? structured.added.join("\n") : "";
+      modifiedContent = Array.isArray(structured.modified) ? structured.modified.join("\n") : "";
+      deletedContent = Array.isArray(structured.deleted) ? structured.deleted.join("\n") : "";
+    }
+
+    return {
+      "对比时间": compareTime,
+      "分公司": displayCompany,
+      "旧年度文件": { text: oldFileName, url: oldFileUrl },
+      "新年度文件": { text: newFileName, url: newFileUrl },
+      "新增内容": addedContent,
+      "修改内容": modifiedContent,
+      "删除内容": deletedContent,
+      "摘要": summary,
+    };
+  };
+
+  // 导出Excel文件
+  const exportToExcel = (data: ComparisonRow[], filename: string) => {
+    try {
+      // 检查数据量，防止内存溢出
+      if (data.length > 1000) {
+        showToast("数据量过大（超过1000条），无法导出。请联系管理员分批导出。", "error");
+        return;
+      }
+
+      console.log(`开始生成Excel文件，共 ${data.length} 条记录`);
+      // 先转换为带超链接信息的格式
+      const rawData = data.map((row) => convertRowToExcelData(row));
+
+      // 创建普通的数据行（用于工作表）
+      const excelData = rawData.map((item) => ({
+        "对比时间": item["对比时间"],
+        "分公司": item["分公司"],
+        "旧年度文件": item["旧年度文件"].text || "",
+        "旧年度文件链接": item["旧年度文件"].url || "",
+        "新年度文件": item["新年度文件"].text || "",
+        "新年度文件链接": item["新年度文件"].url || "",
+        "新增内容": item["新增内容"],
+        "修改内容": item["修改内容"],
+        "删除内容": item["删除内容"],
+        "摘要": item["摘要"],
+      }));
+
+      // 创建工作簿
+      const wb = XLSX.utils.book_new();
+      
+      // 创建工作表
+      const ws = XLSX.utils.json_to_sheet(excelData);
+
+      // 设置列宽
+      const colWidths = [
+        { wch: 20 }, // 对比时间
+        { wch: 15 }, // 分公司
+        { wch: 30 }, // 旧年度文件
+        { wch: 50 }, // 旧年度文件链接
+        { wch: 30 }, // 新年度文件
+        { wch: 50 }, // 新年度文件链接
+        { wch: 50 }, // 新增内容
+        { wch: 50 }, // 修改内容
+        { wch: 50 }, // 删除内容
+        { wch: 80 }, // 摘要
+      ];
+      ws["!cols"] = colWidths;
+
+      // 设置单元格换行（对于包含换行符的单元格）
+      const range = XLSX.utils.decode_range(ws["!ref"] || "A1");
+      
+      // 添加超链接到文件链接列
+      for (let i = 0; i < rawData.length; i++) {
+        // 第1行是标题，数据从第2行开始（索引1）
+        const rowIndex = i + 1;
+        
+        // 旧年度文件链接超链接（第4列，索引3）
+        if (rawData[i]["旧年度文件"].url) {
+          const cellAddress = XLSX.utils.encode_cell({ r: rowIndex, c: 3 });
+          const url = rawData[i]["旧年度文件"].url;
+          
+          // 使用HYPERLINK公式创建超链接
+          // 转义URL中的特殊字符
+          const escapedUrl = url.replace(/"/g, '""');
+          
+          ws[cellAddress] = {
+            t: "s", // 字符串类型
+            v: url,
+            f: `HYPERLINK("${escapedUrl}","${url}")`, // HYPERLINK公式
+            l: { Target: url, Tooltip: url }, // 链接信息
+          };
+        }
+
+        // 新年度文件链接超链接（第6列，索引5）
+        if (rawData[i]["新年度文件"].url) {
+          const cellAddress = XLSX.utils.encode_cell({ r: rowIndex, c: 5 });
+          const url = rawData[i]["新年度文件"].url;
+          
+          // 使用HYPERLINK公式创建超链接
+          // 转义URL中的特殊字符
+          const escapedUrl = url.replace(/"/g, '""');
+          
+          ws[cellAddress] = {
+            t: "s", // 字符串类型
+            v: url,
+            f: `HYPERLINK("${escapedUrl}","${url}")`, // HYPERLINK公式
+            l: { Target: url, Tooltip: url }, // 链接信息
+          };
+        }
+
+        // 设置新增内容、修改内容、删除内容列（第7、8、9列，索引6、7、8）
+        // 确保包含换行符的单元格设置为文本格式
+        const addedCell = XLSX.utils.encode_cell({ r: rowIndex, c: 6 }); // 新增内容
+        const modifiedCell = XLSX.utils.encode_cell({ r: rowIndex, c: 7 }); // 修改内容
+        const deletedCell = XLSX.utils.encode_cell({ r: rowIndex, c: 8 }); // 删除内容
+        
+        // 如果单元格包含换行符，设置为文本格式以确保换行符正确显示
+        [addedCell, modifiedCell, deletedCell].forEach((cellAddr) => {
+          if (ws[cellAddr] && ws[cellAddr].v && typeof ws[cellAddr].v === 'string' && ws[cellAddr].v.includes('\n')) {
+            if (!ws[cellAddr].z) {
+              ws[cellAddr].z = '@'; // 文本格式
+            }
+          }
+        });
+      }
+      
+      // 将工作表添加到工作簿
+      XLSX.utils.book_append_sheet(wb, ws, "对比记录");
+
+      // 导出文件
+      // 注意：标准xlsx库不支持样式设置，但：
+      // 1. HYPERLINK公式会自动应用Excel的默认超链接样式（蓝色+下划线）
+      // 2. \n换行符会被Excel识别，用户需要在Excel中设置单元格为"自动换行"才能看到多行显示
+      XLSX.writeFile(wb, filename);
+
+      showToast(`成功导出 ${data.length} 条记录`, "success");
+    } catch (error) {
+      console.error("导出Excel失败:", error);
+      showToast("导出失败，请稍后重试", "error");
+    }
+  };
+
+  // 导出选中
+  const handleExportSelected = async () => {
     if (selectedIds.size === 0) {
       showToast("请先选择要导出的项", "info");
       return;
     }
-    showToast("功能正在开发", "info");
-  };
 
-  // 导出全部（暂时只显示提示）
-  const handleExportAll = () => {
-    if (sortedComparisons.length === 0) {
-      showToast("没有可导出的数据", "info");
+    const selectedRows = sortedComparisons.filter((row) => selectedIds.has(row.id));
+    
+    // 只导出已完成的对比记录
+    const completedRows = selectedRows.filter((row) => row.comparisonStatus === "done");
+    
+    if (completedRows.length === 0) {
+      showToast("选中的项中没有已完成的对比记录", "info");
       return;
     }
-    showToast("功能正在开发", "info");
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    exportToExcel(completedRows, `对比记录_选中_${timestamp}.xlsx`);
   };
+
 
   // 过滤对比列表
   const filteredComparisons = allComparisons.filter((row) => {
@@ -1854,16 +2039,6 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             导出选中 ({selectedIds.size})
-          </button>
-          <button
-            onClick={handleExportAll}
-            disabled={sortedComparisons.length === 0}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            导出全部 ({sortedComparisons.length})
           </button>
         </div>
         {selectedIds.size > 0 && (
