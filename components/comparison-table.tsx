@@ -515,7 +515,7 @@ function ComparisonResultDisplay({
   structured: ComparisonStructuredData;
   onExpandToggle: () => void;
 }) {
-  const { statistics, added, modified, deleted } = structured;
+  const { added, modified, deleted } = structured;
   const [hoveredTag, setHoveredTag] = useState<"added" | "modified" | "deleted" | null>(null);
   const addedRef = useRef<HTMLButtonElement>(null);
   const modifiedRef = useRef<HTMLButtonElement>(null);
@@ -523,7 +523,7 @@ function ComparisonResultDisplay({
 
   return (
     <div className="flex flex-row flex-wrap items-center gap-2">
-      {statistics.totalAdded > 0 && (
+      {added.length > 0 && (
         <>
           <button
             ref={addedRef}
@@ -532,7 +532,7 @@ function ComparisonResultDisplay({
             onMouseLeave={() => setHoveredTag(null)}
             className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors cursor-pointer"
           >
-            <span className="font-semibold">+{statistics.totalAdded}</span>
+            <span className="font-semibold">+{added.length}</span>
             <span>新增</span>
           </button>
           <TagTooltip
@@ -543,7 +543,7 @@ function ComparisonResultDisplay({
           />
         </>
       )}
-      {statistics.totalModified > 0 && (
+      {modified.length > 0 && (
         <>
           <button
             ref={modifiedRef}
@@ -552,7 +552,7 @@ function ComparisonResultDisplay({
             onMouseLeave={() => setHoveredTag(null)}
             className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors cursor-pointer"
           >
-            <span className="font-semibold">~{statistics.totalModified}</span>
+            <span className="font-semibold">~{modified.length}</span>
             <span>修改</span>
           </button>
           <TagTooltip
@@ -563,7 +563,7 @@ function ComparisonResultDisplay({
           />
         </>
       )}
-      {statistics.totalDeleted > 0 && (
+      {deleted.length > 0 && (
         <>
           <button
             ref={deletedRef}
@@ -572,7 +572,7 @@ function ComparisonResultDisplay({
             onMouseLeave={() => setHoveredTag(null)}
             className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-1 text-xs text-red-700 border border-red-200 hover:bg-red-100 transition-colors cursor-pointer"
           >
-            <span className="font-semibold">-{statistics.totalDeleted}</span>
+            <span className="font-semibold">-{deleted.length}</span>
             <span>删除</span>
           </button>
           <TagTooltip
@@ -626,14 +626,13 @@ function ComparisonCardsRow({
                   </span>
                   新增内容 ({added.length}项)
                 </div>
-                <ul className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto">
+                <ol className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto list-decimal pl-6">
                   {added.map((item, idx) => (
-                    <li key={idx} className="flex items-start gap-2">
-                      <span className="text-emerald-600 mt-0.5 flex-shrink-0">•</span>
-                      <span className="flex-1 break-words">{item}</span>
+                    <li key={idx} className="break-words">
+                      {item}
                     </li>
                   ))}
-                </ul>
+                </ol>
               </div>
             )}
 
@@ -646,14 +645,13 @@ function ComparisonCardsRow({
                   </span>
                   修改内容 ({modified.length}项)
                 </div>
-                <ul className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto">
+                <ol className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto list-decimal pl-6">
                   {modified.map((item, idx) => (
-                    <li key={idx} className="flex items-start gap-2">
-                      <span className="text-blue-600 mt-0.5 flex-shrink-0">•</span>
-                      <span className="flex-1 break-words">{item}</span>
+                    <li key={idx} className="break-words">
+                      {item}
                     </li>
                   ))}
-                </ul>
+                </ol>
               </div>
             )}
 
@@ -666,14 +664,13 @@ function ComparisonCardsRow({
                   </span>
                   删除内容 ({deleted.length}项)
                 </div>
-                <ul className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto">
+                <ol className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto list-decimal pl-6">
                   {deleted.map((item, idx) => (
-                    <li key={idx} className="flex items-start gap-2">
-                      <span className="text-red-600 mt-0.5 flex-shrink-0">•</span>
-                      <span className="flex-1 break-words">{item}</span>
+                    <li key={idx} className="break-words">
+                      {item}
                     </li>
                   ))}
-                </ul>
+                </ol>
               </div>
             )}
           </div>
@@ -3305,14 +3302,13 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                             <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-200 text-emerald-800 text-xs font-bold">+</span>
                             新增内容 ({row.comparisonStructured.added.length}项)
                           </div>
-                          <ul className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto">
+                          <ol className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto list-decimal pl-6">
                             {row.comparisonStructured.added.map((item, idx) => (
-                              <li key={idx} className="flex items-start gap-2">
-                                <span className="text-emerald-600 mt-0.5 flex-shrink-0">•</span>
-                                <span className="flex-1 break-words">{item}</span>
+                              <li key={idx} className="break-words">
+                                {item}
                               </li>
                             ))}
-                          </ul>
+                          </ol>
                         </div>
                       )}
                       {row.comparisonStructured.modified.length > 0 && (
@@ -3321,14 +3317,13 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                             <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-200 text-blue-800 text-xs font-bold">~</span>
                             修改内容 ({row.comparisonStructured.modified.length}项)
                           </div>
-                          <ul className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto">
+                          <ol className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto list-decimal pl-6">
                             {row.comparisonStructured.modified.map((item, idx) => (
-                              <li key={idx} className="flex items-start gap-2">
-                                <span className="text-blue-600 mt-0.5 flex-shrink-0">•</span>
-                                <span className="flex-1 break-words">{item}</span>
+                              <li key={idx} className="break-words">
+                                {item}
                               </li>
                             ))}
-                          </ul>
+                          </ol>
                         </div>
                       )}
                       {row.comparisonStructured.deleted.length > 0 && (
@@ -3337,14 +3332,13 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                             <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-200 text-red-800 text-xs font-bold">-</span>
                             删除内容 ({row.comparisonStructured.deleted.length}项)
                           </div>
-                          <ul className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto">
+                          <ol className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto list-decimal pl-6">
                             {row.comparisonStructured.deleted.map((item, idx) => (
-                              <li key={idx} className="flex items-start gap-2">
-                                <span className="text-red-600 mt-0.5 flex-shrink-0">•</span>
-                                <span className="flex-1 break-words">{item}</span>
+                              <li key={idx} className="break-words">
+                                {item}
                               </li>
                             ))}
-                          </ul>
+                          </ol>
                         </div>
                       )}
                     </div>
