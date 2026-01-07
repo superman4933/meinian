@@ -48,6 +48,7 @@ export default function StandardComparePage() {
     const [username, setUsername] = useState("");
     const [isChecking, setIsChecking] = useState(true);
     const [files, setFiles] = useState<FileInfo[]>([]);
+    const filesRef = useRef<FileInfo[]>([]); // 用于存储最新的 files 状态，确保重复检查时能获取到最新值
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [detailModal, setDetailModal] = useState<{
@@ -130,6 +131,11 @@ export default function StandardComparePage() {
         current: 0,
         total: 0,
     });
+
+    // 初始化 filesRef，确保它与 files 状态同步
+    useEffect(() => {
+        filesRef.current = files;
+    }, [files]);
 
     // 检查登录状态
     useEffect(() => {
@@ -307,13 +313,29 @@ export default function StandardComparePage() {
 
         const newFiles: File[] = Array.from(fileList);
 
+        // 确保 filesRef 是最新的（同步更新）
+        filesRef.current = files;
+
+        // 使用 files 状态检查重复（React 状态是同步的，应该是最新的）
+        const currentFiles = files;
+
+        // 调试日志（开发环境）
+        if (process.env.NODE_ENV === 'development') {
+            console.log('文件选择检查:', {
+                newFilesCount: newFiles.length,
+                newFileNames: newFiles.map(f => f.name),
+                currentFilesCount: currentFiles.length,
+                currentFileNames: currentFiles.map(f => f.name),
+            });
+        }
+
         // 检查是否有文件正在处理（可选提示，不影响上传）
-        const hasProcessingFiles = files.some(
+        const hasProcessingFiles = currentFiles.some(
             (f) => f.uploadStatus === "uploading" || f.compareStatus === "comparing"
         );
 
-        // 检查文件是否已存在（根据文件名）
-        const existingFileNames = new Set(files.map((f) => f.name));
+        // 检查文件是否已存在（根据文件名），使用最新的 files 状态
+        const existingFileNames = new Set(currentFiles.map((f) => f.name));
         const duplicateFiles: File[] = [];
         const validFiles: File[] = [];
 
@@ -331,23 +353,54 @@ export default function StandardComparePage() {
             return;
         }
 
-        // 检查单次选择文件数限制（最多20个）
-        if (newFiles.length > 20) {
-            showToast(`单次最多只能选择20个文件，本次选择了${newFiles.length}个`, "error");
-            return;
+        // 如果有部分文件重复，立即提示用户
+        if (duplicateFiles.length > 0) {
+            const duplicateNames = duplicateFiles.map(f => f.name).join("、");
+            const duplicateCount = duplicateFiles.length;
+            showToast(
+                `有 ${duplicateCount} 个文件已存在列表中，已自动跳过：${duplicateNames.length > 50 ? duplicateNames.substring(0, 50) + "..." : duplicateNames}`,
+                "error"
+            );
+        }
+
+        // 检查文件大小（超过20MB的文件不能上传）
+        const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+        const oversizedFiles: File[] = [];
+        const sizeValidFiles: File[] = [];
+
+        validFiles.forEach((file) => {
+            if (file.size > MAX_FILE_SIZE) {
+                oversizedFiles.push(file);
+            } else {
+                sizeValidFiles.push(file);
+            }
+        });
+
+        // 如果有超过大小限制的文件，提示用户
+        if (oversizedFiles.length > 0) {
+            const oversizedNames = oversizedFiles.map(f => f.name).join("、");
+            const oversizedCount = oversizedFiles.length;
+            showToast(
+                `有 ${oversizedCount} 个文件超过大小限制（最大 20MB），已自动跳过：${oversizedNames.length > 50 ? oversizedNames.substring(0, 50) + "..." : oversizedNames}`,
+                "error"
+            );
         }
 
         // 确保有有效文件需要上传
-        if (validFiles.length === 0) {
-            // 这种情况理论上不会发生（因为前面已经检查了），但为了安全起见
-            if (duplicateFiles.length > 0) {
+        if (sizeValidFiles.length === 0) {
+            // 如果所有文件都超过大小限制
+            if (oversizedFiles.length > 0 && duplicateFiles.length === 0) {
+                showToast(`所有文件都超过大小限制（最大 20MB），共 ${oversizedFiles.length} 个文件`, "error");
+            } else if (duplicateFiles.length > 0 && oversizedFiles.length === 0) {
                 showToast(`所有文件都已存在列表中，共 ${duplicateFiles.length} 个文件`, "error");
+            } else if (duplicateFiles.length > 0 && oversizedFiles.length > 0) {
+                showToast(`所有文件都已存在或超过大小限制，共 ${duplicateFiles.length + oversizedFiles.length} 个文件`, "error");
             }
             return;
         }
 
-        // 添加新文件到列表（只添加不重复的文件）
-        const fileInfos: FileInfo[] = validFiles.map((file, index) => {
+        // 添加新文件到列表（只添加不重复且大小符合要求的文件）
+        const fileInfos: FileInfo[] = sizeValidFiles.map((file, index) => {
             // 从文件名中提取城市名称
             const matchedCity = matchCityFromFileName(file.name);
             const city = matchedCity || "未知区域";
@@ -367,12 +420,16 @@ export default function StandardComparePage() {
             };
         });
 
-        setFiles((prev) => [...prev, ...fileInfos]);
+        setFiles((prev) => {
+            const updated = [...prev, ...fileInfos];
+            filesRef.current = updated; // 同步更新 ref
+            return updated;
+        });
 
         // 并发上传文件，限制同时最多5个，并收集结果
         const uploadResults: Array<{ fileName: string; success: boolean; error?: string }> = [];
         const uploadTasks = fileInfos.map((fileInfo, index) => async () => {
-            const result = await uploadFile(validFiles[index], fileInfo.id);
+            const result = await uploadFile(sizeValidFiles[index], fileInfo.id);
             uploadResults.push({
                 fileName: fileInfo.name,
                 success: result.success,
@@ -388,14 +445,18 @@ export default function StandardComparePage() {
         const failedFiles = uploadResults.filter((r) => !r.success);
         const duplicateCount = duplicateFiles.length;
 
-        // 如果有重复文件，也计入失败
-        const totalFailCount = failCount + duplicateCount;
-        const totalCount = validFiles.length + duplicateFiles.length;
+        // 如果有重复文件或超大文件，也计入失败
+        const oversizedCount = oversizedFiles.length;
+        const totalFailCount = failCount + duplicateCount + oversizedCount;
+        const totalCount = sizeValidFiles.length + duplicateFiles.length + oversizedCount;
 
         // 构建失败原因列表（去重并分类）
         const failureReasons: string[] = [];
         if (duplicateCount > 0) {
             failureReasons.push(`${duplicateCount} 个文件已存在`);
+        }
+        if (oversizedCount > 0) {
+            failureReasons.push(`${oversizedCount} 个文件超过大小限制（最大 20MB）`);
         }
 
         // 统计其他失败原因
@@ -1840,26 +1901,12 @@ export default function StandardComparePage() {
 
     const standardNames = getStandardNames();
 
-    // 生成显示的文件列表（如果有文件就用文件，没有就生成10行空白数据）
+    // 生成显示的文件列表
     let displayFiles: FileInfo[];
     if (showHistory) {
         displayFiles = historyFiles;
-    } else if (files.length > 0) {
-        displayFiles = files;
     } else {
-        displayFiles = Array.from({ length: 10 }, (_, index) => ({
-            id: `placeholder-${index}`,
-            name: "",
-            size: 0,
-            sizeFormatted: "",
-            file_url: "",
-            city: "",
-            uploadStatus: "success" as const,
-            compareStatus: "idle" as const,
-            compareResult: null,
-            uploadProgress: 0,
-            compareProgress: "",
-        }));
+        displayFiles = files;
     }
 
     // 筛选文件（仅历史记录模式下应用筛选）
@@ -2074,7 +2121,7 @@ export default function StandardComparePage() {
                         </svg>
                         <div>
                             <p className="text-lg font-semibold text-slate-700">批量上传政策文件</p>
-                            <p className="text-sm text-slate-500 mt-1">单次最多选择20个文件，支持拖拽上传</p>
+                            <p className="text-sm text-slate-500 mt-1">支持批量上传，单个文件最大 20MB，支持拖拽上传</p>
                         </div>
                         <button
                             onClick={() => fileInputRef.current?.click()}
@@ -2146,7 +2193,41 @@ export default function StandardComparePage() {
                                 </tr>
                                 </thead>
                                 <tbody>
-                                {filteredFiles.map((file) => {
+                                {filteredFiles.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={17} className="border border-slate-300 px-4 py-12">
+                                            <div className="flex flex-col gap-3 pl-8">
+                                                <div className="flex items-center gap-3">
+                                                    <svg className="h-12 w-12 text-slate-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                    </svg>
+                                                    <div className="text-slate-500 flex-1">
+                                                        <p className="text-base font-medium mb-1">当前对比表格暂无数据</p>
+                                                        <p className="text-sm">您可以上传文件进行对比，或切换到 <span className="text-blue-600 font-medium">历史记录</span> 查看之前的对比结果</p>
+                                                    </div>
+                                                </div>
+                                                {!showHistory && (
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-12 flex-shrink-0"></div>
+                                                        <button
+                                                            onClick={() => {
+                                                                setShowHistory(true);
+                                                                loadHistoryRecords(1);
+                                                            }}
+                                                            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+                                                        >
+                                                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                            </svg>
+                                                            查看历史记录
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ) : (
+                                filteredFiles.map((file) => {
                                     const isSelected = selectedIds.has(file.id);
                                     return (
                                     <tr 
@@ -2323,7 +2404,8 @@ export default function StandardComparePage() {
                                         </td>
                                     </tr>
                                     );
-                                })}
+                                })
+                                )}
                                 </tbody>
                             </table>
                         </div>

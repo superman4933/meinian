@@ -3219,8 +3219,30 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           <tbody className="divide-y divide-slate-200 bg-white">
             {sortedComparisons.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-8 text-center text-slate-400">
-                  {showHistory ? "暂无历史记录" : "暂无文件，请先上传文件"}
+                <td colSpan={8} className="px-4 py-12 text-center">
+                  <div className="flex flex-col items-center gap-3">
+                    <svg className="h-12 w-12 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <div className="text-slate-500">
+                      <p className="text-base font-medium mb-1">当前对比表格暂无数据</p>
+                      <p className="text-sm">您可以上传文件进行对比，或点击上方的 <span className="text-blue-600 font-medium">历史记录</span> 按钮查看之前的对比结果</p>
+                    </div>
+                    {!showHistory && (
+                      <button
+                        onClick={() => {
+                          setShowHistory(true);
+                          loadHistoryRecords(1);
+                        }}
+                        className="mt-2 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
+                      >
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        查看历史记录
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ) : (
