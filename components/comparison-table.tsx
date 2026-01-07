@@ -695,15 +695,19 @@ function EditableContentSection({
             <textarea
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
-              className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y min-h-[100px]"
+              className="w-full p-2 border border-slate-300 rounded-lg text-sm text-slate-600 leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y min-h-[100px]"
               placeholder="请输入摘要内容..."
             />
           ) : (
             <textarea
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
-              className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y min-h-[200px]"
+              className="w-full p-2 border border-slate-300 rounded-lg text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y min-h-[200px]"
               placeholder="每行一项内容..."
+              style={{ 
+                lineHeight: '1.5rem',
+                fontFamily: 'inherit',
+              }}
             />
           )}
         </div>
