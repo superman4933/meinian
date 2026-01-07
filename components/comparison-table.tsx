@@ -587,17 +587,176 @@ function ComparisonResultDisplay({
   );
 }
 
+// 可编辑内容区域组件
+function EditableContentSection({
+  title,
+  content,
+  type,
+  rowId,
+  onSave,
+  className = "",
+  icon,
+}: {
+  title: string;
+  content: string | string[];
+  type: "summary" | "added" | "modified" | "deleted";
+  rowId: string;
+  onSave: (type: string, newContent: string | string[]) => Promise<void>;
+  className?: string;
+  icon?: React.ReactNode;
+}) {
+  const [isHovered, setIsHovered] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isEditing) {
+      const isArray = Array.isArray(content);
+      setEditValue(isArray ? content.join("\n") : content);
+    }
+  }, [isEditing, content]);
+
+  const handleEdit = () => {
+    setIsEditing(true);
+  };
+
+  const handleCancel = () => {
+    setIsEditing(false);
+    setEditValue("");
+  };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const isArray = Array.isArray(content);
+      const newContent = isArray ? editValue.split("\n").filter((line) => line.trim()) : editValue;
+      await onSave(type, newContent);
+      setIsEditing(false);
+      showToast("保存成功", "success");
+    } catch (error: any) {
+      console.error("保存失败:", error);
+      showToast("保存失败: " + (error.message || "未知错误"), "error");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const isArray = Array.isArray(content);
+
+  return (
+    <div
+      ref={containerRef}
+      className={`relative ${className}`}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      {isEditing ? (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between mb-2">
+            <div className="font-semibold text-sm flex items-center gap-2">
+              {icon}
+              {title}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSave}
+                disabled={isSaving}
+                className="px-3 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+              >
+                {isSaving ? (
+                  <>
+                    <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    保存中...
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                    完成
+                  </>
+                )}
+              </button>
+              <button
+                onClick={handleCancel}
+                disabled={isSaving}
+                className="px-3 py-1 text-xs bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+          {type === "summary" ? (
+            <textarea
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y min-h-[100px]"
+              placeholder="请输入摘要内容..."
+            />
+          ) : (
+            <textarea
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              className="w-full p-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y min-h-[200px]"
+              placeholder="每行一项内容..."
+            />
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          <div className="font-semibold text-sm flex items-center gap-2">
+            {icon}
+            {title}
+            {isArray && ` (${content.length}项)`}
+          </div>
+          {isHovered && (
+            <button
+              onClick={handleEdit}
+              className="absolute top-0 right-0 p-1.5 bg-white border border-slate-300 rounded-lg shadow-sm hover:bg-slate-50 transition-all z-10"
+              title="编辑"
+            >
+              <svg className="h-4 w-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+            </button>
+          )}
+          {type === "summary" ? (
+            <div className="text-sm text-slate-600 leading-relaxed">{content}</div>
+          ) : (
+            <ol className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto list-decimal pl-6">
+              {isArray && content.map((item, idx) => (
+                <li key={idx} className="break-words">
+                  {item}
+                </li>
+              ))}
+            </ol>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 对比结果卡片展开行组件（在表格的展开行中显示）
 function ComparisonCardsRow({
   structured,
   isOpen,
   onToggle,
   onViewFullReport,
+  rowId,
+  onContentUpdate,
 }: {
   structured: ComparisonStructuredData;
   isOpen: boolean;
   onToggle: () => void;
   onViewFullReport: () => void;
+  rowId: string;
+  onContentUpdate?: (type: string, content: string | string[]) => Promise<void>;
 }) {
   if (!isOpen) return null;
 
@@ -610,8 +769,14 @@ function ComparisonCardsRow({
           {/* 摘要显示 - 顶部 */}
           {summary && (
             <div className="mb-4 pb-4 border-b border-slate-200">
-              <div className="font-semibold mb-2 text-sm text-slate-700">摘要：</div>
-              <div className="text-sm text-slate-600 leading-relaxed">{summary}</div>
+              <EditableContentSection
+                title="摘要"
+                content={summary}
+                type="summary"
+                rowId={rowId}
+                onSave={onContentUpdate || (async () => {})}
+                className="text-slate-700"
+              />
             </div>
           )}
           
@@ -620,57 +785,57 @@ function ComparisonCardsRow({
             {/* 新增内容卡片 */}
             {added.length > 0 && (
               <div className="flex-1 min-w-[280px] rounded-lg border-2 border-emerald-200 bg-emerald-50/50 p-3">
-                <div className="font-semibold mb-2 text-sm text-emerald-700 flex items-center gap-2">
-                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-200 text-emerald-800 text-xs font-bold">
-                    +
-                  </span>
-                  新增内容 ({added.length}项)
-                </div>
-                <ol className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto list-decimal pl-6">
-                  {added.map((item, idx) => (
-                    <li key={idx} className="break-words">
-                      {item}
-                    </li>
-                  ))}
-                </ol>
+                <EditableContentSection
+                  title="新增内容"
+                  content={added}
+                  type="added"
+                  rowId={rowId}
+                  onSave={onContentUpdate || (async () => {})}
+                  className="text-emerald-700"
+                  icon={
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-200 text-emerald-800 text-xs font-bold">
+                      +
+                    </span>
+                  }
+                />
               </div>
             )}
 
             {/* 修改内容卡片 */}
             {modified.length > 0 && (
               <div className="flex-1 min-w-[280px] rounded-lg border-2 border-blue-200 bg-blue-50/50 p-3">
-                <div className="font-semibold mb-2 text-sm text-blue-700 flex items-center gap-2">
-                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-200 text-blue-800 text-xs font-bold">
-                    ~
-                  </span>
-                  修改内容 ({modified.length}项)
-                </div>
-                <ol className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto list-decimal pl-6">
-                  {modified.map((item, idx) => (
-                    <li key={idx} className="break-words">
-                      {item}
-                    </li>
-                  ))}
-                </ol>
+                <EditableContentSection
+                  title="修改内容"
+                  content={modified}
+                  type="modified"
+                  rowId={rowId}
+                  onSave={onContentUpdate || (async () => {})}
+                  className="text-blue-700"
+                  icon={
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-200 text-blue-800 text-xs font-bold">
+                      ~
+                    </span>
+                  }
+                />
               </div>
             )}
 
             {/* 删除内容卡片 */}
             {deleted.length > 0 && (
               <div className="flex-1 min-w-[280px] rounded-lg border-2 border-red-200 bg-red-50/50 p-3">
-                <div className="font-semibold mb-2 text-sm text-red-700 flex items-center gap-2">
-                  <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-200 text-red-800 text-xs font-bold">
-                    -
-                  </span>
-                  删除内容 ({deleted.length}项)
-                </div>
-                <ol className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto list-decimal pl-6">
-                  {deleted.map((item, idx) => (
-                    <li key={idx} className="break-words">
-                      {item}
-                    </li>
-                  ))}
-                </ol>
+                <EditableContentSection
+                  title="删除内容"
+                  content={deleted}
+                  type="deleted"
+                  rowId={rowId}
+                  onSave={onContentUpdate || (async () => {})}
+                  className="text-red-700"
+                  icon={
+                    <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-200 text-red-800 text-xs font-bold">
+                      -
+                    </span>
+                  }
+                />
               </div>
             )}
           </div>
@@ -2079,6 +2244,140 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
   };
 
   // 处理确认完成（审核）- 弹出确认对话框
+  // 处理内容更新
+  const handleContentUpdate = async (row: ComparisonRow, type: string, content: string | string[]) => {
+    if (!row._id) {
+      showToast("无法保存：缺少记录ID", "error");
+      return;
+    }
+
+    const username = getCurrentUsername();
+    if (!username) {
+      showToast("请先登录", "error");
+      return;
+    }
+
+    try {
+      // 从数据库获取原始 rawCozeResponse 数据
+      const recordResponse = await fetch(`/api/policy-compare-records?id=${row._id}&username=${encodeURIComponent(username)}`);
+      const recordData = await recordResponse.json();
+
+      if (!recordData.success || !recordData.data || !recordData.data.rawCozeResponse) {
+        showToast("获取记录失败", "error");
+        return;
+      }
+
+      // 解析原始数据
+      let rawCozeData = null;
+      try {
+        rawCozeData = typeof recordData.data.rawCozeResponse === 'string' 
+          ? JSON.parse(recordData.data.rawCozeResponse) 
+          : recordData.data.rawCozeResponse;
+      } catch (e) {
+        console.error("解析原始数据失败:", e);
+        showToast("解析数据失败", "error");
+        return;
+      }
+
+      // 解析两层 data
+      let firstDataObj = rawCozeData?.data;
+      if (typeof firstDataObj === 'string') {
+        try {
+          firstDataObj = JSON.parse(firstDataObj);
+        } catch (e) {
+          console.error("解析第一层 data 失败:", e);
+          firstDataObj = {};
+        }
+      }
+
+      let secondDataObj = firstDataObj?.data;
+      if (typeof secondDataObj === 'string') {
+        try {
+          secondDataObj = JSON.parse(secondDataObj);
+        } catch (e) {
+          console.error("解析第二层 data 失败:", e);
+          secondDataObj = {};
+        }
+      }
+
+      if (!secondDataObj) {
+        secondDataObj = {};
+      }
+
+      // 更新对应的字段
+      if (type === "summary") {
+        secondDataObj.summary = content as string;
+      } else if (type === "added") {
+        secondDataObj.added = Array.isArray(content) ? content : [];
+      } else if (type === "modified") {
+        secondDataObj.modified = Array.isArray(content) ? content : [];
+      } else if (type === "deleted") {
+        secondDataObj.deleted = Array.isArray(content) ? content : [];
+      }
+
+      // 序列化回字符串
+      firstDataObj.data = JSON.stringify(secondDataObj);
+      rawCozeData.data = JSON.stringify(firstDataObj);
+
+      // 调用 API 更新数据库
+      const response = await fetch("/api/policy-compare-records", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          _id: row._id,
+          rawCozeResponse: rawCozeData,
+          username,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // 更新本地数据
+        const updatedStructured: ComparisonStructuredData = {
+          ...row.comparisonStructured,
+          summary: type === "summary" ? (content as string) : row.comparisonStructured?.summary || "",
+          added: type === "added" ? (content as string[]) : row.comparisonStructured?.added || [],
+          modified: type === "modified" ? (content as string[]) : row.comparisonStructured?.modified || [],
+          deleted: type === "deleted" ? (content as string[]) : row.comparisonStructured?.deleted || [],
+          statistics: row.comparisonStructured?.statistics || {
+            totalAdded: 0,
+            totalDeleted: 0,
+            totalModified: 0,
+          },
+          detailed: row.comparisonStructured?.detailed || "",
+        };
+
+        updateComparison(row.id, {
+          comparisonStructured: updatedStructured,
+        });
+
+        // 如果当前显示历史记录视图，刷新历史记录列表
+        if (showHistory) {
+          await loadHistoryRecords(currentPage);
+        }
+
+        // 如果详情对话框打开，更新它
+        if (detailModal.open && detailModal.row?.id === row.id) {
+          setDetailModal({
+            open: true,
+            row: {
+              ...row,
+              comparisonStructured: updatedStructured,
+            },
+          });
+        }
+      } else {
+        showToast(data.message || "保存失败", "error");
+      }
+    } catch (error: any) {
+      console.error("保存内容失败:", error);
+      showToast("保存失败: " + (error.message || "未知错误"), "error");
+    }
+  };
+
   const handleVerify = (row: ComparisonRow) => {
     if (row.comparisonStatus !== "done") {
       showToast("请先完成对比", "error");
@@ -3148,6 +3447,10 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                       isOpen={expandedCards.has(row.id)}
                       onToggle={() => toggleCards(row.id)}
                       onViewFullReport={() => setDetailModal({ open: true, row })}
+                      rowId={row._id || row.id}
+                      onContentUpdate={async (type, content) => {
+                        await handleContentUpdate(row, type, content);
+                      }}
                     />
                   )}
                   </Fragment>
@@ -3341,54 +3644,68 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                   <div className="mt-3 rounded-xl border border-slate-200 bg-white p-4">
                     {row.comparisonStructured.summary && (
                       <div className="mb-4 pb-4 border-b border-slate-200">
-                        <div className="font-semibold mb-2 text-sm text-slate-700">摘要：</div>
-                        <div className="text-sm text-slate-600 leading-relaxed">{row.comparisonStructured.summary}</div>
+                        <EditableContentSection
+                          title="摘要"
+                          content={row.comparisonStructured.summary}
+                          type="summary"
+                          rowId={row._id || row.id}
+                          onSave={async (type, content) => {
+                            await handleContentUpdate(row, type, content);
+                          }}
+                          className="text-slate-700"
+                        />
                       </div>
                     )}
                     <div className="flex flex-col gap-3 mb-3">
                       {row.comparisonStructured.added.length > 0 && (
                         <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50/50 p-3">
-                          <div className="font-semibold mb-2 text-sm text-emerald-700 flex items-center gap-2">
-                            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-200 text-emerald-800 text-xs font-bold">+</span>
-                            新增内容 ({row.comparisonStructured.added.length}项)
-                          </div>
-                          <ol className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto list-decimal pl-6">
-                            {row.comparisonStructured.added.map((item, idx) => (
-                              <li key={idx} className="break-words">
-                                {item}
-                              </li>
-                            ))}
-                          </ol>
+                          <EditableContentSection
+                            title="新增内容"
+                            content={row.comparisonStructured.added}
+                            type="added"
+                            rowId={row._id || row.id}
+                            onSave={async (type, content) => {
+                              await handleContentUpdate(row, type, content);
+                            }}
+                            className="text-emerald-700"
+                            icon={
+                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-200 text-emerald-800 text-xs font-bold">+</span>
+                            }
+                          />
                         </div>
                       )}
                       {row.comparisonStructured.modified.length > 0 && (
                         <div className="rounded-lg border-2 border-blue-200 bg-blue-50/50 p-3">
-                          <div className="font-semibold mb-2 text-sm text-blue-700 flex items-center gap-2">
-                            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-200 text-blue-800 text-xs font-bold">~</span>
-                            修改内容 ({row.comparisonStructured.modified.length}项)
-                          </div>
-                          <ol className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto list-decimal pl-6">
-                            {row.comparisonStructured.modified.map((item, idx) => (
-                              <li key={idx} className="break-words">
-                                {item}
-                              </li>
-                            ))}
-                          </ol>
+                          <EditableContentSection
+                            title="修改内容"
+                            content={row.comparisonStructured.modified}
+                            type="modified"
+                            rowId={row._id || row.id}
+                            onSave={async (type, content) => {
+                              await handleContentUpdate(row, type, content);
+                            }}
+                            className="text-blue-700"
+                            icon={
+                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-200 text-blue-800 text-xs font-bold">~</span>
+                            }
+                          />
                         </div>
                       )}
                       {row.comparisonStructured.deleted.length > 0 && (
                         <div className="rounded-lg border-2 border-red-200 bg-red-50/50 p-3">
-                          <div className="font-semibold mb-2 text-sm text-red-700 flex items-center gap-2">
-                            <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-200 text-red-800 text-xs font-bold">-</span>
-                            删除内容 ({row.comparisonStructured.deleted.length}项)
-                          </div>
-                          <ol className="space-y-1.5 text-xs text-slate-700 max-h-64 overflow-y-auto list-decimal pl-6">
-                            {row.comparisonStructured.deleted.map((item, idx) => (
-                              <li key={idx} className="break-words">
-                                {item}
-                              </li>
-                            ))}
-                          </ol>
+                          <EditableContentSection
+                            title="删除内容"
+                            content={row.comparisonStructured.deleted}
+                            type="deleted"
+                            rowId={row._id || row.id}
+                            onSave={async (type, content) => {
+                              await handleContentUpdate(row, type, content);
+                            }}
+                            className="text-red-700"
+                            icon={
+                              <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-red-200 text-red-800 text-xs font-bold">-</span>
+                            }
+                          />
                         </div>
                       )}
                     </div>
