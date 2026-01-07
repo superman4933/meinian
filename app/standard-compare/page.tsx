@@ -62,6 +62,32 @@ export default function StandardComparePage() {
         result: null,
     });
 
+    // 编辑状态
+    const [editingStatus, setEditingStatus] = useState<{
+        status: boolean;
+        matched: boolean;
+        evidence: boolean;
+        analysis: boolean;
+    }>({
+        status: false,
+        matched: false,
+        evidence: false,
+        analysis: false,
+    });
+
+    // 编辑值
+    const [editValues, setEditValues] = useState<{
+        status: string;
+        matched: boolean | null;
+        evidence: string;
+        analysis: string;
+    }>({
+        status: "",
+        matched: null,
+        evidence: "",
+        analysis: "",
+    });
+
     // 历史记录相关状态
     const [showHistory, setShowHistory] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
@@ -1584,6 +1610,22 @@ export default function StandardComparePage() {
             standardName,
             result,
         });
+        // 重置编辑状态
+        setEditingStatus({
+            status: false,
+            matched: false,
+            evidence: false,
+            analysis: false,
+        });
+        // 初始化编辑值
+        if (result) {
+            setEditValues({
+                status: result.status || "",
+                matched: result.matched ?? null,
+                evidence: result.evidence || "",
+                analysis: result.analysis || "",
+            });
+        }
     };
 
     // 关闭详情对话框
@@ -1594,6 +1636,182 @@ export default function StandardComparePage() {
             standardName: "",
             result: null,
         });
+    };
+
+    // 保存标准项编辑内容
+    const handleSaveStandardItem = async (
+        file: FileInfo,
+        standardName: string,
+        updates: {
+            status?: string;
+            matched?: boolean | null;
+            evidence?: string;
+            analysis?: string;
+        }
+    ) => {
+        if (!file._id) {
+            showToast("无法保存：缺少记录ID", "error");
+            return;
+        }
+
+        const username = getCurrentUsername();
+        if (!username) {
+            showToast("请先登录", "error");
+            return;
+        }
+
+        try {
+            // 从数据库获取原始数据
+            const recordResponse = await fetch(`/api/standard-compare-records?id=${file._id}&username=${encodeURIComponent(username)}`);
+            const recordData = await recordResponse.json();
+
+            if (!recordData.success || !recordData.data) {
+                showToast("获取记录失败", "error");
+                return;
+            }
+
+            const record = recordData.data;
+
+            // 解析 standardItems
+            let standardItems: StandardItem[] = [];
+            try {
+                if (record.standardItems) {
+                    standardItems = typeof record.standardItems === 'string' 
+                        ? JSON.parse(record.standardItems) 
+                        : record.standardItems;
+                } else if (record.rawCozeResponse) {
+                    const rawData = typeof record.rawCozeResponse === 'string' 
+                        ? JSON.parse(record.rawCozeResponse) 
+                        : record.rawCozeResponse;
+                    if (rawData.structured && Array.isArray(rawData.structured)) {
+                        standardItems = rawData.structured;
+                    }
+                }
+            } catch (e) {
+                console.error("解析标准项数据失败:", e);
+                showToast("解析数据失败", "error");
+                return;
+            }
+
+            // 找到要更新的标准项（通过 standardName 匹配）
+            const standardNames = getStandardNames();
+            const itemIndex = standardNames.indexOf(standardName);
+            
+            if (itemIndex === -1 || !standardItems[itemIndex]) {
+                showToast("找不到对应的标准项", "error");
+                return;
+            }
+
+            // 更新标准项
+            const updatedItem: StandardItem = {
+                ...standardItems[itemIndex],
+                status: (updates.status as StandardItem["status"]) || standardItems[itemIndex].status,
+                matched: updates.matched !== undefined ? updates.matched : standardItems[itemIndex].matched,
+                evidence: updates.evidence !== undefined ? updates.evidence : standardItems[itemIndex].evidence,
+                analysis: updates.analysis !== undefined ? updates.analysis : standardItems[itemIndex].analysis,
+            };
+            standardItems[itemIndex] = updatedItem;
+
+            // 解析 rawCozeResponse
+            let rawCozeData = null;
+            try {
+                if (record.rawCozeResponse) {
+                    rawCozeData = typeof record.rawCozeResponse === 'string' 
+                        ? JSON.parse(record.rawCozeResponse) 
+                        : record.rawCozeResponse;
+                }
+            } catch (e) {
+                console.error("解析 rawCozeResponse 失败:", e);
+            }
+
+            // 更新 rawCozeResponse 中的 structured 数据
+            if (rawCozeData) {
+                // 确保 structured 字段存在
+                if (!rawCozeData.structured) {
+                    rawCozeData.structured = [];
+                }
+                // 更新对应索引的项
+                if (Array.isArray(rawCozeData.structured)) {
+                    // 如果 structured 数组长度不够，扩展它
+                    while (rawCozeData.structured.length <= itemIndex) {
+                        rawCozeData.structured.push({});
+                    }
+                    // 更新对应索引的项，确保类型正确
+                    rawCozeData.structured[itemIndex] = {
+                        ...rawCozeData.structured[itemIndex],
+                        status: updates.status !== undefined ? (updates.status as StandardItem["status"]) : rawCozeData.structured[itemIndex]?.status || standardItems[itemIndex].status,
+                        matched: updates.matched !== undefined ? updates.matched : rawCozeData.structured[itemIndex]?.matched ?? standardItems[itemIndex].matched,
+                        evidence: updates.evidence !== undefined ? updates.evidence : rawCozeData.structured[itemIndex]?.evidence ?? standardItems[itemIndex].evidence,
+                        analysis: updates.analysis !== undefined ? updates.analysis : rawCozeData.structured[itemIndex]?.analysis ?? standardItems[itemIndex].analysis,
+                        id: rawCozeData.structured[itemIndex]?.id ?? standardItems[itemIndex].id,
+                        name: rawCozeData.structured[itemIndex]?.name ?? standardItems[itemIndex].name,
+                    };
+                }
+            } else {
+                // 如果没有 rawCozeResponse，创建一个新的
+                rawCozeData = {
+                    structured: standardItems,
+                };
+            }
+
+            // 调用 API 更新数据库
+            const response = await fetch("/api/standard-compare-records", {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    _id: file._id,
+                    standardItems: standardItems,
+                    rawCozeResponse: rawCozeData,
+                    username,
+                }),
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                // 更新本地状态
+                if (showHistory) {
+                    await loadHistoryRecords(currentPage);
+                } else {
+                    setFiles((prev) =>
+                        prev.map((f) => {
+                            if (f._id === file._id && f.compareResult) {
+                                const updatedResult = [...f.compareResult];
+                                updatedResult[itemIndex] = updatedItem;
+                                return {
+                                    ...f,
+                                    compareResult: updatedResult,
+                                };
+                            }
+                            return f;
+                        })
+                    );
+                }
+
+                // 更新弹窗中的结果
+                setDetailModal((prev) => {
+                    if (prev.open && prev.result) {
+                        return {
+                            ...prev,
+                            result: {
+                                ...prev.result,
+                                ...updatedItem,
+                            },
+                        };
+                    }
+                    return prev;
+                });
+
+                showToast("保存成功", "success");
+            } else {
+                showToast(data.message || "保存失败", "error");
+            }
+        } catch (error: any) {
+            console.error("保存标准项失败:", error);
+            showToast("保存失败: " + (error.message || "未知错误"), "error");
+        }
     };
 
     if (isChecking) {
@@ -2293,160 +2511,391 @@ export default function StandardComparePage() {
                                 {/* 状态信息 */}
                                 <div className="space-y-3">
                                     <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">状态信息</h3>
-                                    <div className="flex items-center gap-4">
-                                        <div>
+                                    <div className="flex items-center gap-4 flex-wrap">
+                                        <div className="relative">
                                             <span className="text-xs text-slate-500">状态：</span>
-                                            <span
-                                                className={`ml-2 px-3 py-1 rounded text-sm font-medium ${
-                                                    detailModal.result.status === "满足"
-                                                        ? "bg-green-100 text-green-700"
-                                                        : detailModal.result.status === "部分满足"
-                                                        ? "bg-yellow-100 text-yellow-700"
-                                                        : detailModal.result.status === "不满足"
-                                                        ? "bg-red-100 text-red-700"
-                                                        : detailModal.result.status === "未提及"
-                                                        ? "bg-gray-100 text-gray-700"
-                                                        : "bg-slate-100 text-slate-700"
-                                                }`}
-                                            >
-                                                {detailModal.result.status}
-                                            </span>
+                                            {editingStatus.status ? (
+                                                <div className="inline-flex items-center gap-2 ml-2">
+                                                    <select
+                                                        value={editValues.status}
+                                                        onChange={(e) => setEditValues(prev => ({ ...prev, status: e.target.value }))}
+                                                        className="px-3 py-1 rounded text-sm font-medium border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    >
+                                                        <option value="满足">满足</option>
+                                                        <option value="部分满足">部分满足</option>
+                                                        <option value="不满足">不满足</option>
+                                                        <option value="未提及">未提及</option>
+                                                        <option value="不适用">不适用</option>
+                                                        <option value="暂不核查">暂不核查</option>
+                                                    </select>
+                                                    <button
+                                                        onClick={async () => {
+                                                            await handleSaveStandardItem(
+                                                                detailModal.file!,
+                                                                detailModal.standardName,
+                                                                { status: editValues.status }
+                                                            );
+                                                            setEditingStatus(prev => ({ ...prev, status: false }));
+                                                        }}
+                                                        className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                                                    >
+                                                        保存
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditValues(prev => ({ ...prev, status: detailModal.result?.status || "" }));
+                                                            setEditingStatus(prev => ({ ...prev, status: false }));
+                                                        }}
+                                                        className="px-2 py-1 text-xs bg-slate-200 text-slate-700 rounded hover:bg-slate-300"
+                                                    >
+                                                        取消
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="inline-flex items-center gap-2 ml-2">
+                                                    <span
+                                                        className={`px-3 py-1 rounded text-sm font-medium ${
+                                                            detailModal.result.status === "满足"
+                                                                ? "bg-green-100 text-green-700"
+                                                                : detailModal.result.status === "部分满足"
+                                                                ? "bg-yellow-100 text-yellow-700"
+                                                                : detailModal.result.status === "不满足"
+                                                                ? "bg-red-100 text-red-700"
+                                                                : detailModal.result.status === "未提及"
+                                                                ? "bg-gray-100 text-gray-700"
+                                                                : "bg-slate-100 text-slate-700"
+                                                        }`}
+                                                    >
+                                                        {detailModal.result.status}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => setEditingStatus(prev => ({ ...prev, status: true }))}
+                                                        className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
+                                                        title="编辑状态"
+                                                    >
+                                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
-                                        {detailModal.result.matched !== null && (
-                                            <div>
-                                                <span className="text-xs text-slate-500">匹配：</span>
-                                                <span
-                                                    className={`ml-2 px-3 py-1 rounded text-sm font-medium ${
-                                                        detailModal.result.matched ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"
-                                                    }`}
-                                                >
-                                                    {detailModal.result.matched ? "✓ 匹配" : "✗ 不匹配"}
-                                                </span>
-                                            </div>
-                                        )}
+                                        <div className="relative">
+                                            <span className="text-xs text-slate-500">匹配：</span>
+                                            {editingStatus.matched ? (
+                                                <div className="inline-flex items-center gap-2 ml-2">
+                                                    <select
+                                                        value={editValues.matched === null ? "" : editValues.matched ? "true" : "false"}
+                                                        onChange={(e) => {
+                                                            const value = e.target.value === "" ? null : e.target.value === "true";
+                                                            setEditValues(prev => ({ ...prev, matched: value }));
+                                                        }}
+                                                        className="px-3 py-1 rounded text-sm font-medium border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    >
+                                                        <option value="">未设置</option>
+                                                        <option value="true">✓ 匹配</option>
+                                                        <option value="false">✗ 不匹配</option>
+                                                    </select>
+                                                    <button
+                                                        onClick={async () => {
+                                                            await handleSaveStandardItem(
+                                                                detailModal.file!,
+                                                                detailModal.standardName,
+                                                                { matched: editValues.matched }
+                                                            );
+                                                            setEditingStatus(prev => ({ ...prev, matched: false }));
+                                                        }}
+                                                        className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                                                    >
+                                                        保存
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditValues(prev => ({ ...prev, matched: detailModal.result?.matched ?? null }));
+                                                            setEditingStatus(prev => ({ ...prev, matched: false }));
+                                                        }}
+                                                        className="px-2 py-1 text-xs bg-slate-200 text-slate-700 rounded hover:bg-slate-300"
+                                                    >
+                                                        取消
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="inline-flex items-center gap-2 ml-2">
+                                                    {detailModal.result.matched !== null ? (
+                                                        <span
+                                                            className={`px-3 py-1 rounded text-sm font-medium ${
+                                                                detailModal.result.matched ? "bg-blue-100 text-blue-700" : "bg-orange-100 text-orange-700"
+                                                            }`}
+                                                        >
+                                                            {detailModal.result.matched ? "✓ 匹配" : "✗ 不匹配"}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="px-3 py-1 rounded text-sm font-medium bg-slate-100 text-slate-500">
+                                                            未设置
+                                                        </span>
+                                                    )}
+                                                    <button
+                                                        onClick={() => setEditingStatus(prev => ({ ...prev, matched: true }))}
+                                                        className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
+                                                        title="编辑匹配"
+                                                    >
+                                                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                        </svg>
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
 
                                 {/* 依据 */}
-                                {detailModal.result.evidence && (
-                                    <div className="space-y-3">
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
                                         <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">依据</h3>
-                                        <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
-                                            <div className="prose prose-sm max-w-none text-slate-700">
-                                                <ReactMarkdown
-                                                    remarkPlugins={[remarkGfm]}
-                                                    components={{
-                                                        h1: ({ node, ...props }) => <h1 className="text-xl font-bold mt-4 mb-2" {...props} />,
-                                                        h2: ({ node, ...props }) => <h2 className="text-lg font-semibold mt-3 mb-2" {...props} />,
-                                                        h3: ({ node, ...props }) => <h3 className="text-base font-semibold mt-2 mb-1" {...props} />,
-                                                        h4: ({ node, ...props }) => <h4 className="text-sm font-semibold mt-2 mb-1" {...props} />,
-                                                        p: ({ node, ...props }) => <p className="mb-2 leading-relaxed" {...props} />,
-                                                        ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2 space-y-1" {...props} />,
-                                                        ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2 space-y-1" {...props} />,
-                                                        li: ({ node, ...props }) => <li className="ml-4" {...props} />,
-                                                        strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
-                                                        em: ({ node, ...props }) => <em className="italic" {...props} />,
-                                                        code: ({ node, ...props }) => (
-                                                            <code className="bg-slate-100 px-1 py-0.5 rounded text-xs font-mono" {...props} />
-                                                        ),
-                                                        pre: ({ node, ...props }) => (
-                                                            <pre className="bg-slate-100 p-3 rounded overflow-x-auto mb-2" {...props} />
-                                                        ),
-                                                        blockquote: ({ node, ...props }) => (
-                                                            <blockquote className="border-l-4 border-slate-300 pl-4 italic my-2" {...props} />
-                                                        ),
-                                                        table: ({ node, ...props }) => (
-                                                            <div className="overflow-x-auto my-4">
-                                                                <table className="min-w-full border-collapse border border-slate-300 text-sm" {...props} />
-                                                            </div>
-                                                        ),
-                                                        thead: ({ node, ...props }) => (
-                                                            <thead className="bg-slate-100" {...props} />
-                                                        ),
-                                                        tbody: ({ node, ...props }) => (
-                                                            <tbody {...props} />
-                                                        ),
-                                                        tr: ({ node, ...props }) => (
-                                                            <tr className="border-b border-slate-200 hover:bg-slate-50" {...props} />
-                                                        ),
-                                                        th: ({ node, ...props }) => (
-                                                            <th className="border border-slate-300 px-4 py-2 text-left font-semibold text-slate-900" {...props} />
-                                                        ),
-                                                        td: ({ node, ...props }) => (
-                                                            <td className="border border-slate-300 px-4 py-2 text-slate-700" {...props} />
-                                                        ),
-                                                    }}
-                                                >
-                                                    {detailModal.result.evidence}
-                                                </ReactMarkdown>
-                                            </div>
-                                        </div>
                                     </div>
-                                )}
+                                    <div className="relative bg-slate-50 rounded-lg p-4 border border-slate-200 min-h-[100px]"
+                                         onMouseEnter={(e) => {
+                                             if (!editingStatus.evidence) {
+                                                 e.currentTarget.querySelector('.edit-button')?.classList.remove('opacity-0');
+                                             }
+                                         }}
+                                         onMouseLeave={(e) => {
+                                             if (!editingStatus.evidence) {
+                                                 e.currentTarget.querySelector('.edit-button')?.classList.add('opacity-0');
+                                             }
+                                         }}
+                                    >
+                                        {editingStatus.evidence ? (
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-end gap-2 mb-2">
+                                                    <button
+                                                        onClick={async () => {
+                                                            await handleSaveStandardItem(
+                                                                detailModal.file!,
+                                                                detailModal.standardName,
+                                                                { evidence: editValues.evidence }
+                                                            );
+                                                            setEditingStatus(prev => ({ ...prev, evidence: false }));
+                                                        }}
+                                                        className="px-3 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1"
+                                                    >
+                                                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                                        </svg>
+                                                        完成
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditValues(prev => ({ ...prev, evidence: detailModal.result?.evidence || "" }));
+                                                            setEditingStatus(prev => ({ ...prev, evidence: false }));
+                                                        }}
+                                                        className="px-3 py-1 text-xs bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300"
+                                                    >
+                                                        取消
+                                                    </button>
+                                                </div>
+                                                <textarea
+                                                    value={editValues.evidence}
+                                                    onChange={(e) => setEditValues(prev => ({ ...prev, evidence: e.target.value }))}
+                                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm text-slate-700 leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y min-h-[200px]"
+                                                    placeholder="请输入依据内容..."
+                                                />
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <button
+                                                    onClick={() => {
+                                                        setEditValues(prev => ({ ...prev, evidence: detailModal.result?.evidence || "" }));
+                                                        setEditingStatus(prev => ({ ...prev, evidence: true }));
+                                                    }}
+                                                    className="edit-button absolute top-2 right-2 p-1.5 bg-white border border-slate-300 rounded-lg shadow-sm hover:bg-slate-50 transition-all opacity-0 z-10"
+                                                    title="编辑依据"
+                                                >
+                                                    <svg className="h-4 w-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                    </svg>
+                                                </button>
+                                                {detailModal.result.evidence ? (
+                                                    <div className="prose prose-sm max-w-none text-slate-700">
+                                                        <ReactMarkdown
+                                                            remarkPlugins={[remarkGfm]}
+                                                            components={{
+                                                                h1: ({ node, ...props }) => <h1 className="text-xl font-bold mt-4 mb-2" {...props} />,
+                                                                h2: ({ node, ...props }) => <h2 className="text-lg font-semibold mt-3 mb-2" {...props} />,
+                                                                h3: ({ node, ...props }) => <h3 className="text-base font-semibold mt-2 mb-1" {...props} />,
+                                                                h4: ({ node, ...props }) => <h4 className="text-sm font-semibold mt-2 mb-1" {...props} />,
+                                                                p: ({ node, ...props }) => <p className="mb-2 leading-relaxed" {...props} />,
+                                                                ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2 space-y-1" {...props} />,
+                                                                ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2 space-y-1" {...props} />,
+                                                                li: ({ node, ...props }) => <li className="ml-4" {...props} />,
+                                                                strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
+                                                                em: ({ node, ...props }) => <em className="italic" {...props} />,
+                                                                code: ({ node, ...props }) => (
+                                                                    <code className="bg-slate-100 px-1 py-0.5 rounded text-xs font-mono" {...props} />
+                                                                ),
+                                                                pre: ({ node, ...props }) => (
+                                                                    <pre className="bg-slate-100 p-3 rounded overflow-x-auto mb-2" {...props} />
+                                                                ),
+                                                                blockquote: ({ node, ...props }) => (
+                                                                    <blockquote className="border-l-4 border-slate-300 pl-4 italic my-2" {...props} />
+                                                                ),
+                                                                table: ({ node, ...props }) => (
+                                                                    <div className="overflow-x-auto my-4">
+                                                                        <table className="min-w-full border-collapse border border-slate-300 text-sm" {...props} />
+                                                                    </div>
+                                                                ),
+                                                                thead: ({ node, ...props }) => (
+                                                                    <thead className="bg-slate-100" {...props} />
+                                                                ),
+                                                                tbody: ({ node, ...props }) => (
+                                                                    <tbody {...props} />
+                                                                ),
+                                                                tr: ({ node, ...props }) => (
+                                                                    <tr className="border-b border-slate-200 hover:bg-slate-50" {...props} />
+                                                                ),
+                                                                th: ({ node, ...props }) => (
+                                                                    <th className="border border-slate-300 px-4 py-2 text-left font-semibold text-slate-900" {...props} />
+                                                                ),
+                                                                td: ({ node, ...props }) => (
+                                                                    <td className="border border-slate-300 px-4 py-2 text-slate-700" {...props} />
+                                                                ),
+                                                            }}
+                                                        >
+                                                            {detailModal.result.evidence}
+                                                        </ReactMarkdown>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-sm text-slate-400 italic">暂无依据内容</div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
 
                                 {/* 结论 */}
-                                {detailModal.result.analysis && (
-                                    <div className="space-y-3">
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
                                         <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">结论</h3>
-                                        <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
-                                            <div className="prose prose-sm max-w-none text-slate-700">
-                                                <ReactMarkdown
-                                                    remarkPlugins={[remarkGfm]}
-                                                    components={{
-                                                        h1: ({ node, ...props }) => <h1 className="text-xl font-bold mt-4 mb-2" {...props} />,
-                                                        h2: ({ node, ...props }) => <h2 className="text-lg font-semibold mt-3 mb-2" {...props} />,
-                                                        h3: ({ node, ...props }) => <h3 className="text-base font-semibold mt-2 mb-1" {...props} />,
-                                                        h4: ({ node, ...props }) => <h4 className="text-sm font-semibold mt-2 mb-1" {...props} />,
-                                                        p: ({ node, ...props }) => <p className="mb-2 leading-relaxed" {...props} />,
-                                                        ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2 space-y-1" {...props} />,
-                                                        ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2 space-y-1" {...props} />,
-                                                        li: ({ node, ...props }) => <li className="ml-4" {...props} />,
-                                                        strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
-                                                        em: ({ node, ...props }) => <em className="italic" {...props} />,
-                                                        code: ({ node, ...props }) => (
-                                                            <code className="bg-slate-100 px-1 py-0.5 rounded text-xs font-mono" {...props} />
-                                                        ),
-                                                        pre: ({ node, ...props }) => (
-                                                            <pre className="bg-slate-100 p-3 rounded overflow-x-auto mb-2" {...props} />
-                                                        ),
-                                                        blockquote: ({ node, ...props }) => (
-                                                            <blockquote className="border-l-4 border-slate-300 pl-4 italic my-2" {...props} />
-                                                        ),
-                                                        table: ({ node, ...props }) => (
-                                                            <div className="overflow-x-auto my-4">
-                                                                <table className="min-w-full border-collapse border border-slate-300 text-sm" {...props} />
-                                                            </div>
-                                                        ),
-                                                        thead: ({ node, ...props }) => (
-                                                            <thead className="bg-slate-100" {...props} />
-                                                        ),
-                                                        tbody: ({ node, ...props }) => (
-                                                            <tbody {...props} />
-                                                        ),
-                                                        tr: ({ node, ...props }) => (
-                                                            <tr className="border-b border-slate-200 hover:bg-slate-50" {...props} />
-                                                        ),
-                                                        th: ({ node, ...props }) => (
-                                                            <th className="border border-slate-300 px-4 py-2 text-left font-semibold text-slate-900" {...props} />
-                                                        ),
-                                                        td: ({ node, ...props }) => (
-                                                            <td className="border border-slate-300 px-4 py-2 text-slate-700" {...props} />
-                                                        ),
-                                                    }}
-                                                >
-                                                    {detailModal.result.analysis}
-                                                </ReactMarkdown>
+                                    </div>
+                                    <div className="relative bg-blue-50 rounded-lg p-4 border border-blue-200 min-h-[100px]"
+                                         onMouseEnter={(e) => {
+                                             if (!editingStatus.analysis) {
+                                                 e.currentTarget.querySelector('.edit-button')?.classList.remove('opacity-0');
+                                             }
+                                         }}
+                                         onMouseLeave={(e) => {
+                                             if (!editingStatus.analysis) {
+                                                 e.currentTarget.querySelector('.edit-button')?.classList.add('opacity-0');
+                                             }
+                                         }}
+                                    >
+                                        {editingStatus.analysis ? (
+                                            <div className="space-y-2">
+                                                <div className="flex items-center justify-end gap-2 mb-2">
+                                                    <button
+                                                        onClick={async () => {
+                                                            await handleSaveStandardItem(
+                                                                detailModal.file!,
+                                                                detailModal.standardName,
+                                                                { analysis: editValues.analysis }
+                                                            );
+                                                            setEditingStatus(prev => ({ ...prev, analysis: false }));
+                                                        }}
+                                                        className="px-3 py-1 text-xs bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-1"
+                                                    >
+                                                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                                                        </svg>
+                                                        完成
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            setEditValues(prev => ({ ...prev, analysis: detailModal.result?.analysis || "" }));
+                                                            setEditingStatus(prev => ({ ...prev, analysis: false }));
+                                                        }}
+                                                        className="px-3 py-1 text-xs bg-slate-200 text-slate-700 rounded-lg hover:bg-slate-300"
+                                                    >
+                                                        取消
+                                                    </button>
+                                                </div>
+                                                <textarea
+                                                    value={editValues.analysis}
+                                                    onChange={(e) => setEditValues(prev => ({ ...prev, analysis: e.target.value }))}
+                                                    className="w-full p-2 border border-slate-300 rounded-lg text-sm text-slate-700 leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-y min-h-[200px]"
+                                                    placeholder="请输入结论内容..."
+                                                />
                                             </div>
-                                        </div>
+                                        ) : (
+                                            <>
+                                                <button
+                                                    onClick={() => {
+                                                        setEditValues(prev => ({ ...prev, analysis: detailModal.result?.analysis || "" }));
+                                                        setEditingStatus(prev => ({ ...prev, analysis: true }));
+                                                    }}
+                                                    className="edit-button absolute top-2 right-2 p-1.5 bg-white border border-slate-300 rounded-lg shadow-sm hover:bg-slate-50 transition-all opacity-0 z-10"
+                                                    title="编辑结论"
+                                                >
+                                                    <svg className="h-4 w-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                    </svg>
+                                                </button>
+                                                {detailModal.result.analysis ? (
+                                                    <div className="prose prose-sm max-w-none text-slate-700">
+                                                        <ReactMarkdown
+                                                            remarkPlugins={[remarkGfm]}
+                                                            components={{
+                                                                h1: ({ node, ...props }) => <h1 className="text-xl font-bold mt-4 mb-2" {...props} />,
+                                                                h2: ({ node, ...props }) => <h2 className="text-lg font-semibold mt-3 mb-2" {...props} />,
+                                                                h3: ({ node, ...props }) => <h3 className="text-base font-semibold mt-2 mb-1" {...props} />,
+                                                                h4: ({ node, ...props }) => <h4 className="text-sm font-semibold mt-2 mb-1" {...props} />,
+                                                                p: ({ node, ...props }) => <p className="mb-2 leading-relaxed" {...props} />,
+                                                                ul: ({ node, ...props }) => <ul className="list-disc list-inside mb-2 space-y-1" {...props} />,
+                                                                ol: ({ node, ...props }) => <ol className="list-decimal list-inside mb-2 space-y-1" {...props} />,
+                                                                li: ({ node, ...props }) => <li className="ml-4" {...props} />,
+                                                                strong: ({ node, ...props }) => <strong className="font-semibold" {...props} />,
+                                                                em: ({ node, ...props }) => <em className="italic" {...props} />,
+                                                                code: ({ node, ...props }) => (
+                                                                    <code className="bg-slate-100 px-1 py-0.5 rounded text-xs font-mono" {...props} />
+                                                                ),
+                                                                pre: ({ node, ...props }) => (
+                                                                    <pre className="bg-slate-100 p-3 rounded overflow-x-auto mb-2" {...props} />
+                                                                ),
+                                                                blockquote: ({ node, ...props }) => (
+                                                                    <blockquote className="border-l-4 border-slate-300 pl-4 italic my-2" {...props} />
+                                                                ),
+                                                                table: ({ node, ...props }) => (
+                                                                    <div className="overflow-x-auto my-4">
+                                                                        <table className="min-w-full border-collapse border border-slate-300 text-sm" {...props} />
+                                                                    </div>
+                                                                ),
+                                                                thead: ({ node, ...props }) => (
+                                                                    <thead className="bg-slate-100" {...props} />
+                                                                ),
+                                                                tbody: ({ node, ...props }) => (
+                                                                    <tbody {...props} />
+                                                                ),
+                                                                tr: ({ node, ...props }) => (
+                                                                    <tr className="border-b border-slate-200 hover:bg-slate-50" {...props} />
+                                                                ),
+                                                                th: ({ node, ...props }) => (
+                                                                    <th className="border border-slate-300 px-4 py-2 text-left font-semibold text-slate-900" {...props} />
+                                                                ),
+                                                                td: ({ node, ...props }) => (
+                                                                    <td className="border border-slate-300 px-4 py-2 text-slate-700" {...props} />
+                                                                ),
+                                                            }}
+                                                        >
+                                                            {detailModal.result.analysis}
+                                                        </ReactMarkdown>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-sm text-slate-400 italic">暂无结论内容</div>
+                                                )}
+                                            </>
+                                        )}
                                     </div>
-                                )}
-
-                                {/* 如果没有依据和结论，显示提示 */}
-                                {!detailModal.result.evidence && !detailModal.result.analysis && (
-                                    <div className="text-center py-8 text-slate-400">
-                                        <p className="text-sm">暂无详细信息</p>
-                                    </div>
-                                )}
+                                </div>
                             </div>
                         </div>
                     </div>
