@@ -94,6 +94,17 @@ export default function StandardComparePage() {
     // 多选状态
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
+    // 删除进度状态
+    const [deleteProgress, setDeleteProgress] = useState<{
+        isDeleting: boolean;
+        current: number;
+        total: number;
+    }>({
+        isDeleting: false,
+        current: 0,
+        total: 0,
+    });
+
     // 检查登录状态
     useEffect(() => {
         const checkAutoLogin = async () => {
@@ -1219,28 +1230,42 @@ export default function StandardComparePage() {
             showToast("请先登录", "error");
             return;
         }
-        const deletePromises = filesWithId.map(async (file) => {
-            try {
-                const response = await fetch(
-                    `/api/standard-compare-records?id=${encodeURIComponent(file._id!)}&username=${encodeURIComponent(username)}`,
-                    {
-                        method: "DELETE",
-                    }
-                );
-                const data = await response.json();
-                if (!data.success) {
-                    console.error(`删除记录失败 [${file.city}]:`, data);
-                    throw new Error(data.message || "删除失败");
-                }
-                return { success: true, file };
-            } catch (error) {
-                console.error(`删除记录时出错 [${file.city}]:`, error);
-                throw error;
-            }
+
+        // 初始化删除进度
+        const totalToDelete = filesWithId.length;
+        setDeleteProgress({
+            isDeleting: true,
+            current: 0,
+            total: totalToDelete,
         });
 
         try {
-            await Promise.all(deletePromises);
+            // 逐个删除并更新进度
+            for (let i = 0; i < filesWithId.length; i++) {
+                const file = filesWithId[i];
+                try {
+                    const response = await fetch(
+                        `/api/standard-compare-records?id=${encodeURIComponent(file._id!)}&username=${encodeURIComponent(username)}`,
+                        {
+                            method: "DELETE",
+                        }
+                    );
+                    const data = await response.json();
+                    if (!data.success) {
+                        console.error(`删除记录失败 [${file.city}]:`, data);
+                        throw new Error(data.message || "删除失败");
+                    }
+                    // 更新进度
+                    setDeleteProgress({
+                        isDeleting: true,
+                        current: i + 1,
+                        total: totalToDelete,
+                    });
+                } catch (error) {
+                    console.error(`删除记录时出错 [${file.city}]:`, error);
+                    throw error;
+                }
+            }
             
             // 删除无_id的记录（只从前端删除）
             if (filesWithoutId.length > 0) {
@@ -1267,6 +1292,13 @@ export default function StandardComparePage() {
         } catch (error) {
             console.error("批量删除失败:", error);
             showToast("部分删除失败，请检查网络连接", "error");
+        } finally {
+            // 重置删除进度
+            setDeleteProgress({
+                isDeleting: false,
+                current: 0,
+                total: 0,
+            });
         }
     };
 
@@ -1633,71 +1665,86 @@ export default function StandardComparePage() {
             <Header username={username} onLogout={handleLogout}/>
             <main className="mx-auto max-w-[1400px] px-4 py-6 space-y-4">
                 {/* 多选操作按钮 */}
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={toggleSelectAll}
-                            className="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2"
-                        >
-                            <input
-                                type="checkbox"
-                                checked={filteredFiles.length > 0 && selectedIds.size === filteredFiles.length}
-                                onChange={toggleSelectAll}
-                                className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
-                            />
-                            全选
-                        </button>
-                        <button
-                            onClick={handleDeleteSelected}
-                            disabled={selectedIds.size === 0}
-                            className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-                        >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                            选中删除 ({selectedIds.size})
-                        </button>
-                        <div className="relative" ref={exportDropdownRef}>
+                <div className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
                             <button
-                                onClick={() => {
-                                    if (selectedIds.size === 0) {
-                                        showToast("请先选择要导出的项", "info");
-                                        return;
-                                    }
-                                    setExportDropdownOpen(!exportDropdownOpen);
-                                }}
-                                disabled={selectedIds.size === 0}
-                                className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                                onClick={toggleSelectAll}
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2"
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={filteredFiles.length > 0 && selectedIds.size === filteredFiles.length}
+                                    onChange={toggleSelectAll}
+                                    className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
+                                />
+                                全选
+                            </button>
+                            <button
+                                onClick={handleDeleteSelected}
+                                disabled={selectedIds.size === 0 || deleteProgress.isDeleting}
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                 </svg>
-                                导出选中 ({selectedIds.size})
-                                <svg className={`w-4 h-4 transition-transform ${exportDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                                </svg>
+                                选中删除 ({selectedIds.size})
                             </button>
-                            {exportDropdownOpen && (
-                                <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-slate-200 rounded-lg shadow-lg z-50">
-                                    <button
-                                        onClick={handleExportSimple}
-                                        className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition-colors first:rounded-t-lg"
-                                    >
-                                        导出简易版
-                                    </button>
-                                    <button
-                                        onClick={handleExportDetailed}
-                                        className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition-colors last:rounded-b-lg"
-                                    >
-                                        导出详情版
-                                    </button>
-                                </div>
-                            )}
+                            <div className="relative" ref={exportDropdownRef}>
+                                <button
+                                    onClick={() => {
+                                        if (selectedIds.size === 0) {
+                                            showToast("请先选择要导出的项", "info");
+                                            return;
+                                        }
+                                        setExportDropdownOpen(!exportDropdownOpen);
+                                    }}
+                                    disabled={selectedIds.size === 0}
+                                    className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                                >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    导出选中 ({selectedIds.size})
+                                    <svg className={`w-4 h-4 transition-transform ${exportDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </button>
+                                {exportDropdownOpen && (
+                                    <div className="absolute top-full left-0 mt-1 w-48 bg-white border border-slate-200 rounded-lg shadow-lg z-50">
+                                        <button
+                                            onClick={handleExportSimple}
+                                            className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition-colors first:rounded-t-lg"
+                                        >
+                                            导出简易版
+                                        </button>
+                                        <button
+                                            onClick={handleExportDetailed}
+                                            className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 transition-colors last:rounded-b-lg"
+                                        >
+                                            导出详情版
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                     {selectedIds.size > 0 && (
                         <div className="text-sm text-slate-600">
                             已选择 {selectedIds.size} 项
+                        </div>
+                    )}
+                    {/* 删除进度条 */}
+                    {deleteProgress.isDeleting && (
+                        <div className="w-full bg-slate-200 rounded-full h-8 overflow-hidden shadow-inner">
+                            <div 
+                                className="h-full bg-gradient-to-r from-red-500 to-red-600 flex items-center justify-center text-white text-sm font-medium transition-all duration-300"
+                                style={{ width: `${(deleteProgress.current / deleteProgress.total) * 100}%` }}
+                            >
+                                <span className="px-2">
+                                    正在删除: {deleteProgress.current} / {deleteProgress.total}
+                                </span>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -1821,7 +1868,22 @@ export default function StandardComparePage() {
                 </div>
                 )}
 
+                {/* 加载历史记录提示 */}
+                {isLoadingHistory && showHistory && (
+                    <div className="bg-white rounded-xl border border-slate-200 p-8 text-center">
+                        <div className="inline-flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 mb-4 animate-pulse">
+                            <svg className="h-6 w-6 text-blue-600 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        </div>
+                        <p className="text-lg font-semibold text-slate-700">正在加载历史记录...</p>
+                        <p className="text-sm text-slate-500 mt-2">请稍候</p>
+                    </div>
+                )}
+
                 {/* 对比结果表格 */}
+                {(!isLoadingHistory || !showHistory) && (
                 <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                     <div className="overflow-x-auto">
                         <table className="w-full border-collapse">
@@ -2080,6 +2142,7 @@ export default function StandardComparePage() {
                         </div>
                     )}
                 </div>
+                )}
 
                 {/* 覆盖/创建模式选择对话框 */}
                 {compareModeModal.open && compareModeModal.file && createPortal(

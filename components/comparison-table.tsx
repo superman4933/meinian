@@ -1500,6 +1500,17 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
   
   // 多选状态
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // 删除进度状态
+  const [deleteProgress, setDeleteProgress] = useState<{
+    isDeleting: boolean;
+    current: number;
+    total: number;
+  }>({
+    isDeleting: false,
+    current: 0,
+    total: 0,
+  });
   
   // 历史记录分页状态
   const [historyRecords, setHistoryRecords] = useState<any[]>([]);
@@ -2386,30 +2397,48 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
     const rowsWithId = selectedRows.filter((row) => row._id);
     const rowsWithoutId = selectedRows.filter((row) => !row._id);
 
-    // 删除有数据库_id的记录
-    const deletePromises = rowsWithId.map(async (row) => {
-      try {
-        const response = await fetch(
-          `/api/policy-compare-records?id=${encodeURIComponent(row._id!)}`,
-          {
-            method: "DELETE",
-          }
-        );
-        const data = await response.json();
-        if (!data.success) {
-          console.error(`删除记录失败 [${row.company}]:`, data);
-          throw new Error(data.message || "删除失败");
-        }
-        return { success: true, row };
-      } catch (error) {
-        console.error(`删除记录时出错 [${row.company}]:`, error);
-        throw error;
-      }
+    // 获取用户名
+    const username = getCurrentUsername();
+    if (!username) {
+      showToast("请先登录", "error");
+      return;
+    }
+
+    // 初始化删除进度
+    const totalToDelete = rowsWithId.length;
+    setDeleteProgress({
+      isDeleting: true,
+      current: 0,
+      total: totalToDelete,
     });
 
     try {
-      // 等待所有数据库删除操作完成
-      await Promise.all(deletePromises);
+      // 逐个删除并更新进度
+      for (let i = 0; i < rowsWithId.length; i++) {
+        const row = rowsWithId[i];
+        try {
+          const response = await fetch(
+            `/api/policy-compare-records?id=${encodeURIComponent(row._id!)}&username=${encodeURIComponent(username)}`,
+            {
+              method: "DELETE",
+            }
+          );
+          const data = await response.json();
+          if (!data.success) {
+            console.error(`删除记录失败 [${row.company}]:`, data);
+            throw new Error(data.message || "删除失败");
+          }
+          // 更新进度
+          setDeleteProgress({
+            isDeleting: true,
+            current: i + 1,
+            total: totalToDelete,
+          });
+        } catch (error) {
+          console.error(`删除记录时出错 [${row.company}]:`, error);
+          throw error;
+        }
+      }
       
       // 从前端删除所有选中的项
       if (showHistory) {
@@ -2449,6 +2478,13 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       if (showHistory) {
         await loadHistoryRecords(currentPage);
       }
+    } finally {
+      // 重置删除进度
+      setDeleteProgress({
+        isDeleting: false,
+        current: 0,
+        total: 0,
+      });
     }
   };
 
@@ -2795,7 +2831,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           </button>
           <button
             onClick={handleDeleteSelected}
-            disabled={selectedIds.size === 0}
+            disabled={selectedIds.size === 0 || deleteProgress.isDeleting}
             className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2820,6 +2856,20 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           </div>
         )}
       </div>
+
+      {/* 删除进度条 */}
+      {deleteProgress.isDeleting && (
+        <div className="mx-4 mb-4 w-auto bg-slate-200 rounded-full h-8 overflow-hidden shadow-inner">
+          <div 
+            className="h-full bg-gradient-to-r from-red-500 to-red-600 flex items-center justify-center text-white text-sm font-medium transition-all duration-300"
+            style={{ width: `${(deleteProgress.current / deleteProgress.total) * 100}%` }}
+          >
+            <span className="px-2">
+              正在删除: {deleteProgress.current} / {deleteProgress.total}
+            </span>
+          </div>
+        </div>
+      )}
 
       {isLoadingHistory && showHistory && (
         <div className="p-8 text-center">
