@@ -38,6 +38,35 @@ function showToast(message: string, type: "success" | "error" | "info" = "info")
   }, 2700);
 }
 
+// 从 markdown 内容中提取第一行标题
+function extractTitleFromMarkdown(markdown: string): string {
+  if (!markdown) return "对比报告";
+  
+  const lines = markdown.split("\n");
+  
+  // 查找第一个非空行
+  for (const line of lines) {
+    const trimmed = line.trim();
+    
+    // 跳过空行
+    if (!trimmed) continue;
+    
+    // 如果是 markdown 标题（以 # 开头），提取标题文本
+    if (trimmed.startsWith("#")) {
+      const title = trimmed.replace(/^#+\s*/, "").trim();
+      if (title) return title;
+    } else {
+      // 如果不是标题格式，但这是第一行非空内容，也作为标题
+      // 限制长度，避免过长
+      const title = trimmed.length > 50 ? trimmed.substring(0, 50) + "..." : trimmed;
+      return title;
+    }
+  }
+  
+  // 如果没有找到合适的标题，返回默认值
+  return "对比报告";
+}
+
 function FileDisplay({
   file,
   type,
@@ -244,6 +273,7 @@ function PreviewRow({
       setPdfDownloadUrlPreview(null);
       
       try {
+        // 第一步：生成PDF
         const response = await fetch("/api/markdown-to-pdf", {
           method: "POST",
           headers: {
@@ -262,19 +292,42 @@ function PreviewRow({
         // 获取返回的 JSON 数据（包含 PDF 链接）
         const data = await response.json();
         
-        if (data.success && data.pdfUrl) {
-          // 保存 PDF 链接
-          setPdfDownloadUrlPreview(data.pdfUrl);
-          // 提示用户生成成功，点击下载
-          showToast("PDF生成成功，点击下载", "success");
-          // 清除加载状态
-          setIsExportingPDF(false);
-        } else {
+        if (!data.success || !data.pdfUrl) {
           throw new Error(data.message || "未获取到 PDF 链接");
+        }
+
+        // 第二步：提取标题并上传到七牛云
+        const title = extractTitleFromMarkdown(markdownContent);
+        const uploadResponse = await fetch("/api/pdf-to-qiniu", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            pdfUrl: data.pdfUrl,
+            fileName: title,
+          }),
+        });
+
+        if (!uploadResponse.ok) {
+          const errorData = await uploadResponse.json();
+          throw new Error(errorData.message || "PDF上传到七牛云失败");
+        }
+
+        const uploadData = await uploadResponse.json();
+        
+        if (uploadData.success && uploadData.pdfUrl) {
+          // 保存七牛云的 PDF 链接
+          setPdfDownloadUrlPreview(uploadData.pdfUrl);
+          // 提示用户生成成功，点击下载
+          showToast("PDF生成并上传成功，点击下载", "success");
+        } else {
+          throw new Error(uploadData.message || "PDF上传失败");
         }
       } catch (error: any) {
         console.error("导出PDF失败:", error);
         showToast(`PDF导出失败: ${error.message || "未知错误"}`, "error");
+      } finally {
         // 清除加载状态
         setIsExportingPDF(false);
       }
@@ -284,7 +337,10 @@ function PreviewRow({
       if (pdfDownloadUrlPreview) {
         const a = document.createElement("a");
         a.href = pdfDownloadUrlPreview;
-        a.download = `对比报告_${row.company || "未知"}_${new Date().toISOString().split("T")[0]}.pdf`;
+        // 从URL中提取文件名，如果没有则使用默认名称
+        const urlParts = pdfDownloadUrlPreview.split("/");
+        const fileName = urlParts[urlParts.length - 1] || `对比报告_${row.company || "未知"}_${new Date().toISOString().split("T")[0]}.pdf`;
+        a.download = fileName;
         a.target = "_blank";
         document.body.appendChild(a);
         a.click();
@@ -972,6 +1028,7 @@ function DetailModal({
     setPdfDownloadUrl(null);
     
     try {
+      // 第一步：生成PDF
       const response = await fetch("/api/markdown-to-pdf", {
         method: "POST",
         headers: {
@@ -990,19 +1047,42 @@ function DetailModal({
       // 获取返回的 JSON 数据（包含 PDF 链接）
       const data = await response.json();
       
-      if (data.success && data.pdfUrl) {
-        // 保存 PDF 链接
-        setPdfDownloadUrl(data.pdfUrl);
-        // 提示用户生成成功，点击下载
-        showToast("PDF生成成功，点击下载", "success");
-        // 清除加载状态
-        setIsExportingPDF(false);
-      } else {
+      if (!data.success || !data.pdfUrl) {
         throw new Error(data.message || "未获取到 PDF 链接");
+      }
+
+      // 第二步：提取标题并上传到七牛云
+      const title = extractTitleFromMarkdown(markdownContent);
+      const uploadResponse = await fetch("/api/pdf-to-qiniu", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          pdfUrl: data.pdfUrl,
+          fileName: title,
+        }),
+      });
+
+      if (!uploadResponse.ok) {
+        const errorData = await uploadResponse.json();
+        throw new Error(errorData.message || "PDF上传到七牛云失败");
+      }
+
+      const uploadData = await uploadResponse.json();
+      
+      if (uploadData.success && uploadData.pdfUrl) {
+        // 保存七牛云的 PDF 链接
+        setPdfDownloadUrl(uploadData.pdfUrl);
+        // 提示用户生成成功，点击下载
+        showToast("PDF生成并上传成功，点击下载", "success");
+      } else {
+        throw new Error(uploadData.message || "PDF上传失败");
       }
     } catch (error: any) {
       console.error("导出PDF失败:", error);
       showToast(`PDF导出失败: ${error.message || "未知错误"}`, "error");
+    } finally {
       // 清除加载状态
       setIsExportingPDF(false);
     }
@@ -1012,7 +1092,10 @@ function DetailModal({
     if (pdfDownloadUrl) {
       const a = document.createElement("a");
       a.href = pdfDownloadUrl;
-      a.download = `对比报告_${row?.company || "未知"}_${new Date().toISOString().split("T")[0]}.pdf`;
+      // 从URL中提取文件名，如果没有则使用默认名称
+      const urlParts = pdfDownloadUrl.split("/");
+      const fileName = urlParts[urlParts.length - 1] || `对比报告_${row?.company || "未知"}_${new Date().toISOString().split("T")[0]}.pdf`;
+      a.download = fileName;
       a.target = "_blank";
       document.body.appendChild(a);
       a.click();
