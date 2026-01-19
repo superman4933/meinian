@@ -14,7 +14,7 @@ export function FileUpload({ type }: FileUploadProps) {
   const title = isLastYear ? "上传旧年度文件" : "上传新年度文件";
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const { addFile } = useFileContext();
+  const { addFile, getComparisonByCity } = useFileContext();
 
   const handleFileSelect = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -53,6 +53,23 @@ export function FileUpload({ type }: FileUploadProps) {
     // 直接使用上传区域的类型
     const finalType = type;
 
+    // 检查是否正在对比中
+    const existingComparison = getComparisonByCity(city);
+    if (existingComparison && existingComparison.comparisonStatus === "comparing") {
+      const toast = document.createElement("div");
+      toast.className = "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-orange-500 text-white px-6 py-4 rounded-lg shadow-xl text-sm max-w-md text-center";
+      toast.textContent = `该文件正在对比中，无法替换。请等待对比完成后再上传。`;
+      toast.style.opacity = "0";
+      toast.style.transition = "opacity 0.3s";
+      document.body.appendChild(toast);
+      setTimeout(() => { toast.style.opacity = "1"; }, 10);
+      setTimeout(() => {
+        toast.style.opacity = "0";
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+      return;
+    }
+
     // 创建文件信息
     const fileInfo = {
       id: tempId,
@@ -67,7 +84,21 @@ export function FileUpload({ type }: FileUploadProps) {
     };
 
     // 先添加到列表显示上传中状态
-    addFile(fileInfo);
+    const addResult = addFile(fileInfo);
+    if (!addResult.success) {
+      const toast = document.createElement("div");
+      toast.className = "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-orange-500 text-white px-6 py-4 rounded-lg shadow-xl text-sm max-w-md text-center";
+      toast.textContent = addResult.message || "文件上传被阻止";
+      toast.style.opacity = "0";
+      toast.style.transition = "opacity 0.3s";
+      document.body.appendChild(toast);
+      setTimeout(() => { toast.style.opacity = "1"; }, 10);
+      setTimeout(() => {
+        toast.style.opacity = "0";
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+      return;
+    }
 
     try {
       // 上传到扣子
@@ -145,7 +176,22 @@ export function FileUpload({ type }: FileUploadProps) {
       }
 
       // 更新文件（通过重新添加覆盖）
-      addFile(updatedFileInfo);
+      const updateResult = addFile(updatedFileInfo);
+      if (!updateResult.success) {
+        // 如果更新失败（可能因为对比状态变化），显示错误提示
+        const toast = document.createElement("div");
+        toast.className = "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-orange-500 text-white px-6 py-4 rounded-lg shadow-xl text-sm max-w-md text-center";
+        toast.textContent = updateResult.message || "文件上传成功，但无法更新列表（可能正在对比中）";
+        toast.style.opacity = "0";
+        toast.style.transition = "opacity 0.3s";
+        document.body.appendChild(toast);
+        setTimeout(() => { toast.style.opacity = "1"; }, 10);
+        setTimeout(() => {
+          toast.style.opacity = "0";
+          setTimeout(() => toast.remove(), 300);
+        }, 3000);
+        return;
+      }
     } catch (error: any) {
       // 更新为错误状态（创建新对象）
       let errorMessage = "上传失败";
@@ -160,6 +206,7 @@ export function FileUpload({ type }: FileUploadProps) {
         uploadStatus: "error" as const,
         error: errorMessage,
       };
+      // 上传失败时更新错误状态，即使对比中也要更新（因为上传已经失败了）
       addFile(errorFileInfo);
     }
   };

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCozeToken } from "@/lib/coze-config";
 import tcb from "@cloudbase/node-sdk";
+import { jsonrepair } from "jsonrepair";
 
 // 腾讯云开发环境ID
 const ENV_ID = process.env.TCB_ENV_ID || "pet-8g5ohyrp269f409e-9bua741dcc7";
@@ -115,6 +116,39 @@ function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// 尝试修复JSON格式
+function tryRepairJson(content: string, attempt: number): { success: boolean; repaired?: any; error?: string } {
+  if (typeof content !== 'string' || !content.trim()) {
+    return { success: false, error: '内容不是字符串或为空' };
+  }
+
+  try {
+    // 尝试使用 jsonrepair 修复
+    const repaired = jsonrepair(content);
+    const parsed = JSON.parse(repaired);
+    
+    console.log(`🔧 JSON修复成功 (第 ${attempt} 次尝试):`, {
+      originalLength: content.length,
+      repairedLength: repaired.length,
+      isObject: typeof parsed === 'object',
+      isArray: Array.isArray(parsed),
+      length: Array.isArray(parsed) ? parsed.length : 'N/A',
+      firstItemKeys: Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'object' 
+        ? Object.keys(parsed[0]).slice(0, 10) 
+        : [],
+    });
+
+    return { success: true, repaired: parsed };
+  } catch (error: any) {
+    console.warn(`⚠️ JSON修复失败 (第 ${attempt} 次尝试):`, {
+      error: error.message,
+      contentPreview: content.substring(0, 200),
+      contentLength: content.length,
+    });
+    return { success: false, error: error.message };
+  }
+}
+
 // 调用扣子工作流API（带重试）
 async function callCozeWorkflow(
   cozeToken: string,
@@ -177,7 +211,7 @@ async function callCozeWorkflow(
     }
 
     const extractedContent = extractContent(data);
-    const isValid = isValidJsonFormat(extractedContent);
+    let isValid = isValidJsonFormat(extractedContent);
     console.log(`数据格式检查 (第 ${attempt}/${MAX_RETRIES} 次):`, {
       isValid,
       hasData: !!data.data,
@@ -186,6 +220,54 @@ async function callCozeWorkflow(
       isArray: Array.isArray(extractedContent),
       extractedContentPreview: JSON.stringify(extractedContent, null, 2).substring(0, 500) + "...",
     });
+
+    // 如果格式无效，尝试修复JSON
+    if (!isValid && typeof extractedContent === 'string' && extractedContent.trim().length > 0) {
+      console.log(`🔧 尝试修复JSON格式 (第 ${attempt}/${MAX_RETRIES} 次)...`);
+      const repairResult = tryRepairJson(extractedContent, attempt);
+      
+      if (repairResult.success && repairResult.repaired) {
+        // 修复成功，验证修复后的数据是否符合预期格式
+        const repairedIsValid = isValidJsonFormat(repairResult.repaired);
+        console.log(`修复后格式验证:`, {
+          isValid: repairedIsValid,
+          repairedType: typeof repairResult.repaired,
+          isArray: Array.isArray(repairResult.repaired),
+        });
+
+        if (repairedIsValid) {
+          // 修复成功且验证通过，更新data.data为修复后的数据
+          console.log(`✅ JSON修复成功并通过验证 (第 ${attempt}/${MAX_RETRIES} 次)`);
+          // 将修复后的数据更新到原始数据结构中
+          if (data.data && typeof data.data === 'string') {
+            try {
+              const parsed = JSON.parse(data.data);
+              if (parsed.data && typeof parsed.data === 'string') {
+                // 更新内层数据
+                data.data = JSON.stringify({
+                  ...parsed,
+                  data: JSON.stringify(repairResult.repaired)
+                });
+              } else {
+                data.data = JSON.stringify(repairResult.repaired);
+              }
+            } catch (e) {
+              data.data = JSON.stringify(repairResult.repaired);
+            }
+          } else {
+            data.data = JSON.stringify(repairResult.repaired);
+          }
+          isValid = true;
+        } else {
+          console.warn(`⚠️ JSON修复成功但格式验证未通过 (第 ${attempt}/${MAX_RETRIES} 次)`);
+        }
+      } else {
+        console.warn(`⚠️ JSON修复失败 (第 ${attempt}/${MAX_RETRIES} 次):`, {
+          error: repairResult.error,
+          extractedContentPreview: extractedContent.substring(0, 200),
+        });
+      }
+    }
 
     if (isValid) {
       console.log(`✅ 成功获取JSON格式数据 (第 ${attempt}/${MAX_RETRIES} 次)`);

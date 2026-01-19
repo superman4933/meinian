@@ -19,3 +19,4 @@ export function isLoggedIn(): boolean {
   return getCurrentUsername() !== null;
 }
 
+

@@ -49,7 +49,7 @@ export interface ComparisonRow {
 interface FileContextType {
   files: FileInfo[];
   comparisons: ComparisonRow[];
-  addFile: (file: FileInfo) => void;
+  addFile: (file: FileInfo) => { success: boolean; message?: string };
   removeFile: (fileId: string) => void;
   updateFile: (fileId: string, updates: Partial<FileInfo>) => void;
   getComparisonByCity: (city: string) => ComparisonRow | undefined;
@@ -64,33 +64,47 @@ export function FileProvider({ children }: { children: ReactNode }) {
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [comparisons, setComparisons] = useState<ComparisonRow[]>([]);
 
-  const addFile = (file: FileInfo) => {
-    setFiles((prev) => {
-      // 如果同一城市同一类型已有文件，替换它
-      const existingIndex = prev.findIndex(
-        (f) => f.city === file.city && f.type === file.type
-      );
-      if (existingIndex >= 0) {
-        const newFiles = [...prev];
-        newFiles[existingIndex] = file;
-        return newFiles;
-      }
-      return [...prev, file];
-    });
+  const addFile = (file: FileInfo): { success: boolean; message?: string } => {
+    // 先检查当前对比状态（使用函数式更新来获取最新状态）
+    let blockUpload = false;
+    let blockMessage = "";
     
-    // 更新对比列表
-    setComparisons((prev) => {
-      const existing = prev.find((c) => c.id === file.city);
+    // 同步检查对比状态
+    setComparisons((prevComparisons) => {
+      const existingComparison = prevComparisons.find((c) => c.id === file.city);
+      
+      // 如果要替换现有文件，检查对比状态
+      if (existingComparison) {
+        // 检查是否正在对比中
+        if (existingComparison.comparisonStatus === "comparing") {
+          blockUpload = true;
+          blockMessage = `该文件正在对比中，无法替换。请等待对比完成后再上传。`;
+        }
+      }
+      
+      // 如果被阻止，不更新状态
+      if (blockUpload) {
+        return prevComparisons;
+      }
+      
+      // 正常更新逻辑
+      const existing = prevComparisons.find((c) => c.id === file.city);
       if (existing) {
         // 更新现有的对比行
-        return prev.map((c) =>
+        // 只有在对比状态不是 "comparing" 时才重置状态
+        const shouldResetStatus = existing.comparisonStatus !== "comparing";
+        return prevComparisons.map((c) =>
           c.id === file.city
             ? {
                 ...c,
                 [file.type === "thisYear" ? "thisYearFile" : "lastYearFile"]: file,
-                comparisonStatus: "none" as const, // 重置对比状态
-                comparisonResult: undefined,
-                comparisonError: undefined,
+                ...(shouldResetStatus
+                  ? {
+                      comparisonStatus: "none" as const, // 重置对比状态
+                      comparisonResult: undefined,
+                      comparisonError: undefined,
+                    }
+                  : {}),
               }
             : c
         );
@@ -105,9 +119,33 @@ export function FileProvider({ children }: { children: ReactNode }) {
           lastYearFile: file.type === "lastYear" ? file : null,
           comparisonStatus: "none" as const,
         };
-        return [...prev, newRow];
+        return [...prevComparisons, newRow];
       }
     });
+    
+    // 如果被阻止，直接返回
+    if (blockUpload) {
+      return {
+        success: false,
+        message: blockMessage,
+      };
+    }
+    
+    // 更新文件列表
+    setFiles((prev) => {
+      // 如果同一城市同一类型已有文件，替换它
+      const existingIndex = prev.findIndex(
+        (f) => f.city === file.city && f.type === file.type
+      );
+      if (existingIndex >= 0) {
+        const newFiles = [...prev];
+        newFiles[existingIndex] = file;
+        return newFiles;
+      }
+      return [...prev, file];
+    });
+    
+    return { success: true };
   };
 
   const removeFile = (fileId: string) => {

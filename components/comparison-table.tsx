@@ -1742,7 +1742,7 @@ interface ComparisonTableProps {
 }
 
 export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTableProps) {
-  const { comparisons, removeFile, updateComparison, addFile, removeComparison } = useFileContext();
+  const { comparisons, removeFile, updateComparison, addFile, removeComparison, getComparisonByCity } = useFileContext();
   const [openPreviews, setOpenPreviews] = useState<Set<string>>(new Set());
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
   const [detailModal, setDetailModal] = useState<{ open: boolean; row: ComparisonRow | null }>({
@@ -1887,6 +1887,13 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       // 直接使用当前行的city，不进行城市匹配校验
       const city = rowId;
 
+      // 检查是否正在对比中
+      const existingComparison = getComparisonByCity(city);
+      if (existingComparison && existingComparison.comparisonStatus === "comparing") {
+        showToast("该文件正在对比中，无法替换。请等待对比完成后再上传。", "error");
+        return;
+      }
+
       // 创建文件信息
       const fileInfo = {
         id: tempId,
@@ -1901,7 +1908,11 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       };
 
       // 先添加到列表显示上传中状态
-      addFile(fileInfo);
+      const addResult = addFile(fileInfo);
+      if (!addResult.success) {
+        showToast(addResult.message || "文件上传被阻止", "error");
+        return;
+      }
 
       try {
         // 上传到扣子
@@ -1982,7 +1993,12 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         }
 
         // 更新文件（通过重新添加覆盖）
-        addFile(updatedFileInfo);
+        const updateResult = addFile(updatedFileInfo);
+        if (!updateResult.success) {
+          // 如果更新失败（可能因为对比状态变化），显示错误提示
+          showToast(updateResult.message || "文件上传成功，但无法更新列表（可能正在对比中）", "error");
+          return;
+        }
       } catch (error: any) {
         // 更新为错误状态（创建新对象）
         let errorMessage = "上传失败";
@@ -1997,6 +2013,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           uploadStatus: "error" as const,
           error: errorMessage,
         };
+        // 上传失败时更新错误状态，即使对比中也要更新（因为上传已经失败了）
         addFile(errorFileInfo);
       }
     };
