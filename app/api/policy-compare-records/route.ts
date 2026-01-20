@@ -15,6 +15,25 @@ function getDatabase() {
   
   if (!dbInstance) {
     console.log("[getDatabase] 初始化新的数据库连接实例...");
+    
+    // 添加网络环境诊断
+    console.log("[getDatabase] ========== 网络环境诊断 ==========");
+    console.log("[getDatabase] 系统环境信息:", {
+      nodeVersion: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      env: process.env.NODE_ENV,
+      pid: process.pid,
+      uptime: process.uptime(),
+    });
+    
+    console.log("[getDatabase] 网络配置信息:", {
+      httpProxy: process.env.HTTP_PROXY || process.env.http_proxy || "未设置",
+      httpsProxy: process.env.HTTPS_PROXY || process.env.https_proxy || "未设置",
+      noProxy: process.env.NO_PROXY || process.env.no_proxy || "未设置",
+      dnsServers: process.env.DNS_SERVERS || "未设置",
+    });
+    
     const secretId = process.env.TCB_SECRET_ID;
     const secretKey = process.env.TCB_SECRET_KEY;
     
@@ -56,9 +75,56 @@ function getDatabase() {
           // 执行一个简单的查询测试连接
           const testQuery = databaseInstance!.collection(COLLECTION_NAME).limit(1);
           console.log("[getDatabase] 📤 发送测试查询请求...");
+          console.log("[getDatabase] 测试查询参数:", {
+            collection: COLLECTION_NAME,
+            limit: 1,
+          });
+          
+          // 创建查询 Promise，并添加详细的错误捕获
+          const queryPromise = testQuery.get().catch((err: any) => {
+            // 捕获 SDK 内部的错误
+            console.error(`[getDatabase] 🔴 SDK 查询内部错误捕获:`, {
+              error: err.message,
+              code: err.code,
+              errno: err.errno,
+              syscall: err.syscall,
+              address: err.address,
+              port: err.port,
+              stack: err.stack,
+              name: err.name,
+              // 尝试获取 SDK 内部的错误信息
+              response: err.response ? {
+                status: err.response.status,
+                statusText: err.response.statusText,
+                data: err.response.data,
+                headers: err.response.headers,
+              } : undefined,
+              request: err.request ? {
+                method: err.request.method,
+                url: err.request.url,
+                headers: err.request.headers,
+              } : undefined,
+              config: err.config ? {
+                url: err.config.url,
+                method: err.config.method,
+                timeout: err.config.timeout,
+                headers: err.config.headers,
+              } : undefined,
+              // 尝试获取所有可枚举的属性
+              allProperties: Object.keys(err).reduce((acc: any, key) => {
+                try {
+                  acc[key] = err[key];
+                } catch (e) {
+                  acc[key] = '[无法访问]';
+                }
+                return acc;
+              }, {}),
+            });
+            throw err;
+          });
           
           const testResult: any = await Promise.race([
-            testQuery.get(),
+            queryPromise,
             new Promise((_, reject) => 
               setTimeout(() => reject(new Error('连接测试超时（5秒）')), 5000)
             )
@@ -79,12 +145,15 @@ function getDatabase() {
             console.warn(`[getDatabase] ⚠️ 测试查询返回错误码:`, {
               code: testResult.code,
               message: testResult.message,
+              fullResult: testResult,
             });
           }
         } catch (testError: any) {
           const testTime = Date.now() - testStartTime;
           console.error(`[getDatabase] ❌ 数据库连接测试失败，耗时: ${testTime}ms`);
-          console.error(`[getDatabase] 测试错误详情:`, {
+          
+          // 收集所有可能的错误信息
+          const errorDetails: any = {
             error: testError.message,
             code: testError.code,
             errno: testError.errno,
@@ -94,17 +163,71 @@ function getDatabase() {
             stack: testError.stack,
             name: testError.name,
             errorString: String(testError),
-          });
+          };
+          
+          // 尝试获取更多错误信息
+          try {
+            if (testError.response) {
+              errorDetails.response = {
+                status: testError.response.status,
+                statusText: testError.response.statusText,
+                data: testError.response.data,
+                headers: testError.response.headers,
+              };
+            }
+          } catch (e) {
+            // 忽略
+          }
+          
+          try {
+            if (testError.request) {
+              errorDetails.request = {
+                method: testError.request.method,
+                url: testError.request.url,
+                headers: testError.request.headers,
+              };
+            }
+          } catch (e) {
+            // 忽略
+          }
+          
+          // 尝试获取所有可枚举的属性
+          try {
+            const allProps: any = {};
+            for (const key in testError) {
+              try {
+                allProps[key] = testError[key];
+              } catch (e) {
+                allProps[key] = '[无法访问]';
+              }
+            }
+            errorDetails.allProperties = allProps;
+          } catch (e) {
+            // 忽略
+          }
+          
+          console.error(`[getDatabase] 测试错误详情（完整）:`, JSON.stringify(errorDetails, null, 2));
           
           // 根据错误类型给出诊断建议
           if (testError.code === 'ETIMEDOUT') {
             console.error(`[getDatabase] 💡 诊断建议: 网络超时，可能是网络延迟过高或腾讯云服务不可达`);
+            console.error(`[getDatabase] 💡 检查项: 1) 腾讯云开发控制台的安全设置（IP白名单） 2) 网络连接状态 3) 服务是否正常运行`);
           } else if (testError.code === 'ECONNREFUSED') {
             console.error(`[getDatabase] 💡 诊断建议: 连接被拒绝，可能是IP白名单限制或服务未启动`);
+            console.error(`[getDatabase] 💡 检查项: 1) 腾讯云开发控制台的IP白名单设置 2) 确认服务是否启动`);
           } else if (testError.code === 'ENOTFOUND') {
             console.error(`[getDatabase] 💡 诊断建议: DNS解析失败，检查网络连接和DNS设置`);
+            console.error(`[getDatabase] 💡 检查项: 1) DNS服务器配置 2) 网络连接状态 3) 域名解析是否正常`);
           } else if (testError.code === 'EHOSTUNREACH') {
             console.error(`[getDatabase] 💡 诊断建议: 主机不可达，可能是网络路由问题`);
+            console.error(`[getDatabase] 💡 检查项: 1) 网络路由配置 2) 防火墙设置 3) 服务地址是否正确`);
+          } else if (testError.message?.includes('超时')) {
+            console.error(`[getDatabase] 💡 诊断建议: 查询超时，可能是网络延迟过高或查询性能问题`);
+            console.error(`[getDatabase] 💡 检查项: 1) 腾讯云开发控制台的安全设置 2) 网络延迟 3) 数据库索引是否建立 4) 查询条件是否优化`);
+            console.error(`[getDatabase] 💡 可能原因: 1) Zeabur平台到腾讯云的网络延迟 2) IP白名单限制 3) 查询数据量过大`);
+          } else {
+            console.error(`[getDatabase] 💡 诊断建议: 未知错误类型，请检查完整错误信息`);
+            console.error(`[getDatabase] 💡 检查项: 1) 腾讯云开发控制台的所有安全设置 2) 网络连接状态 3) SDK版本和配置`);
           }
           
           // 不抛出错误，只记录警告，让后续操作继续
@@ -752,12 +875,80 @@ export async function GET(request: NextRequest) {
       });
       
       const singleQueryStartTime = Date.now();
-      console.log(`[GET ${requestId}] 📤 发送数据库查询请求...`);
+      console.log(`[GET ${requestId}] 📤 发送数据库查询请求（原始数据）:`, JSON.stringify({
+        collection: COLLECTION_NAME,
+        docId: recordId,
+      }, null, 2));
       
-      const result: any = await db
-        .collection(COLLECTION_NAME)
-        .doc(recordId) // recordId就是数据库的_id
-        .get();
+      let result: any;
+      try {
+        // 添加详细的错误捕获
+        result = await db
+          .collection(COLLECTION_NAME)
+          .doc(recordId) // recordId就是数据库的_id
+          .get()
+          .catch((err: any) => {
+            // 捕获 SDK 内部的错误
+            console.error(`[GET ${requestId}] 🔴 SDK 查询内部错误捕获:`, {
+              error: err.message,
+              code: err.code,
+              errno: err.errno,
+              syscall: err.syscall,
+              address: err.address,
+              port: err.port,
+              stack: err.stack,
+              name: err.name,
+              response: err.response ? {
+                status: err.response.status,
+                statusText: err.response.statusText,
+                data: err.response.data,
+                headers: err.response.headers,
+              } : undefined,
+              request: err.request ? {
+                method: err.request.method,
+                url: err.request.url,
+                headers: err.request.headers,
+              } : undefined,
+              allProperties: Object.keys(err).reduce((acc: any, key) => {
+                try {
+                  acc[key] = err[key];
+                } catch (e) {
+                  acc[key] = '[无法访问]';
+                }
+                return acc;
+              }, {}),
+            });
+            throw err;
+          });
+      } catch (queryError: any) {
+        const singleQueryTime = Date.now() - singleQueryStartTime;
+        console.error(`[GET ${requestId}] ❌ 单个记录查询异常，耗时: ${singleQueryTime}ms`);
+        
+        // 收集所有可能的错误信息
+        const errorDetails: any = {
+          error: queryError.message,
+          code: queryError.code,
+          errno: queryError.errno,
+          syscall: queryError.syscall,
+          address: queryError.address,
+          port: queryError.port,
+          stack: queryError.stack,
+          name: queryError.name,
+          errorString: String(queryError),
+        };
+        
+        console.error(`[GET ${requestId}] 查询错误详情（完整）:`, JSON.stringify(errorDetails, null, 2));
+        
+        return NextResponse.json(
+          {
+            success: false,
+            message: queryError.message || "查询失败",
+            code: queryError.code,
+            errorDetails: errorDetails,
+          },
+          { status: 500 }
+        );
+      }
 
       const singleQueryTime = Date.now() - singleQueryStartTime;
       console.log(`[GET ${requestId}] 📥 数据库查询响应（原始数据）:`, JSON.stringify(result, null, 2));
@@ -866,7 +1057,112 @@ export async function GET(request: NextRequest) {
       console.log(`[GET ${requestId}] 开始执行数据查询...`);
       const dataQueryStartTime = Date.now();
       
-      const result: any = await query.get();
+      let result: any;
+      try {
+        // 添加详细的错误捕获
+        result = await query.get().catch((err: any) => {
+          // 捕获 SDK 内部的错误
+          console.error(`[GET ${requestId}] 🔴 SDK 查询内部错误捕获:`, {
+            error: err.message,
+            code: err.code,
+            errno: err.errno,
+            syscall: err.syscall,
+            address: err.address,
+            port: err.port,
+            stack: err.stack,
+            name: err.name,
+            // 尝试获取 SDK 内部的错误信息
+            response: err.response ? {
+              status: err.response.status,
+              statusText: err.response.statusText,
+              data: err.response.data,
+              headers: err.response.headers,
+            } : undefined,
+            request: err.request ? {
+              method: err.request.method,
+              url: err.request.url,
+              headers: err.request.headers,
+            } : undefined,
+            config: err.config ? {
+              url: err.config.url,
+              method: err.config.method,
+              timeout: err.config.timeout,
+              headers: err.config.headers,
+            } : undefined,
+            // 尝试获取所有可枚举的属性
+            allProperties: Object.keys(err).reduce((acc: any, key) => {
+              try {
+                acc[key] = err[key];
+              } catch (e) {
+                acc[key] = '[无法访问]';
+              }
+              return acc;
+            }, {}),
+          });
+          throw err;
+        });
+      } catch (queryError: any) {
+        const dataQueryTime = Date.now() - dataQueryStartTime;
+        console.error(`[GET ${requestId}] ❌ 数据查询异常，耗时: ${dataQueryTime}ms`);
+        
+        // 收集所有可能的错误信息
+        const errorDetails: any = {
+          error: queryError.message,
+          code: queryError.code,
+          errno: queryError.errno,
+          syscall: queryError.syscall,
+          address: queryError.address,
+          port: queryError.port,
+          stack: queryError.stack,
+          name: queryError.name,
+          errorString: String(queryError),
+        };
+        
+        // 尝试获取更多错误信息
+        try {
+          if (queryError.response) {
+            errorDetails.response = {
+              status: queryError.response.status,
+              statusText: queryError.response.statusText,
+              data: queryError.response.data,
+              headers: queryError.response.headers,
+            };
+          }
+        } catch (e) {
+          // 忽略
+        }
+        
+        try {
+          if (queryError.request) {
+            errorDetails.request = {
+              method: queryError.request.method,
+              url: queryError.request.url,
+              headers: queryError.request.headers,
+            };
+          }
+        } catch (e) {
+          // 忽略
+        }
+        
+        console.error(`[GET ${requestId}] 查询错误详情（完整）:`, JSON.stringify(errorDetails, null, 2));
+        
+        // 根据错误类型给出诊断建议
+        if (queryError.code === 'ETIMEDOUT' || queryError.message?.includes('超时')) {
+          console.error(`[GET ${requestId}] 💡 诊断建议: 查询超时，可能是网络延迟过高或查询性能问题`);
+          console.error(`[GET ${requestId}] 💡 检查项: 1) 腾讯云开发控制台的安全设置（IP白名单） 2) 网络延迟 3) 数据库索引是否建立 4) 查询条件是否优化`);
+          console.error(`[GET ${requestId}] 💡 可能原因: 1) Zeabur平台到腾讯云的网络延迟 2) IP白名单限制 3) 查询数据量过大（pageSize: ${pageSize}）`);
+        }
+        
+        return NextResponse.json(
+          {
+            success: false,
+            message: queryError.message || "查询失败",
+            code: queryError.code,
+            errorDetails: errorDetails,
+          },
+          { status: 500 }
+        );
+      }
       
       const dataQueryTime = Date.now() - dataQueryStartTime;
       console.log(`[GET ${requestId}] 📥 数据库查询响应（原始数据）:`, JSON.stringify(result, null, 2));
