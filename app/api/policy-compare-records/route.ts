@@ -15,16 +15,14 @@ function getDatabase() {
   
   if (!dbInstance) {
     console.log("[getDatabase] 初始化新的数据库连接实例...");
-    console.log("[getDatabase] 环境变量检查:", {
-      hasSecretId: !!process.env.TCB_SECRET_ID,
-      hasSecretKey: !!process.env.TCB_SECRET_KEY,
-      envId: ENV_ID,
-      secretIdLength: process.env.TCB_SECRET_ID?.length || 0,
-      secretKeyLength: process.env.TCB_SECRET_KEY?.length || 0,
-    });
-    
     const secretId = process.env.TCB_SECRET_ID;
     const secretKey = process.env.TCB_SECRET_KEY;
+    
+    console.log("[getDatabase] 环境变量原始数据:", {
+      TCB_ENV_ID: ENV_ID,
+      TCB_SECRET_ID: secretId,
+      TCB_SECRET_KEY: secretKey,
+    });
     
     if (!secretId || !secretKey) {
       console.error("[getDatabase] ❌ 缺少必要的环境变量");
@@ -140,21 +138,18 @@ export async function POST(request: NextRequest) {
       updateTime: new Date().toISOString(),
     };
 
-    console.log(`[POST ${requestId}] 准备插入记录到集合: ${COLLECTION_NAME}`);
-    console.log(`[POST ${requestId}] 记录数据:`, {
-      company,
-      oldFileName,
-      newFileName,
-      username,
-      hasRawCozeResponse: !!rawCozeResponse,
-      rawCozeResponseLength: rawCozeResponse ? JSON.stringify(rawCozeResponse).length : 0,
-    });
+    console.log(`[POST ${requestId}] ========== 准备插入记录 ==========`);
+    console.log(`[POST ${requestId}] 目标集合: ${COLLECTION_NAME}`);
+    console.log(`[POST ${requestId}] 📤 插入数据（原始数据）:`, JSON.stringify(record, null, 2));
 
     // 使用SDK插入记录
     console.log(`[POST ${requestId}] 开始执行数据库插入操作...`);
     const insertStartTime = Date.now();
+    
     const result: any = await db.collection(COLLECTION_NAME).add(record);
+    
     const insertTime = Date.now() - insertStartTime;
+    console.log(`[POST ${requestId}] 📥 数据库插入响应（原始数据）:`, JSON.stringify(result, null, 2));
     console.log(`[POST ${requestId}] 数据库插入完成，耗时: ${insertTime}ms`);
 
     // 检查是否有错误（根据文档，应该检查 typeof result.code === 'string'）
@@ -228,12 +223,25 @@ export async function POST(request: NextRequest) {
 
 // DELETE: 删除对比记录
 export async function DELETE(request: NextRequest) {
+  const requestStartTime = Date.now();
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
   try {
+    console.log(`[DELETE ${requestId}] ========== 开始处理请求 ==========`);
+    console.log(`[DELETE ${requestId}] 请求时间: ${new Date().toISOString()}`);
+    
     const { searchParams } = new URL(request.url);
     const _id = searchParams.get("id"); // 数据库的_id
     const username = searchParams.get("username"); // 用户名
 
+    console.log(`[DELETE ${requestId}] 请求参数:`, {
+      _id,
+      username,
+      url: request.url,
+    });
+
     if (!_id) {
+      console.error(`[DELETE ${requestId}] ❌ 缺少记录ID`);
       return NextResponse.json(
         { success: false, message: "缺少记录ID" },
         { status: 400 }
@@ -241,21 +249,35 @@ export async function DELETE(request: NextRequest) {
     }
 
     if (!username) {
+      console.error(`[DELETE ${requestId}] ❌ 缺少用户名参数`);
       return NextResponse.json(
         { success: false, message: "缺少用户名参数" },
         { status: 400 }
       );
     }
 
+    console.log(`[DELETE ${requestId}] 开始初始化数据库连接...`);
+    const dbInitStartTime = Date.now();
     const db = getDatabase();
+    const dbInitTime = Date.now() - dbInitStartTime;
+    console.log(`[DELETE ${requestId}] 数据库连接初始化完成，耗时: ${dbInitTime}ms`);
 
     // 先查询记录，验证是否属于当前用户
+    console.log(`[DELETE ${requestId}] ========== 查询记录 ==========`);
+    console.log(`[DELETE ${requestId}] 📤 查询请求（原始数据）:`, JSON.stringify({
+      collection: COLLECTION_NAME,
+      docId: _id,
+    }, null, 2));
+    
     const recordResult: any = await db
       .collection(COLLECTION_NAME)
       .doc(_id)
       .get();
 
+    console.log(`[DELETE ${requestId}] 📥 查询响应（原始数据）:`, JSON.stringify(recordResult, null, 2));
+
     if (typeof recordResult.code === 'string' || !recordResult.data || recordResult.data.length === 0) {
+      console.warn(`[DELETE ${requestId}] ⚠️ 记录不存在`);
       return NextResponse.json(
         { success: false, message: "记录不存在" },
         { status: 404 }
@@ -264,6 +286,7 @@ export async function DELETE(request: NextRequest) {
 
     const record = recordResult.data[0];
     if (record.username !== username) {
+      console.error(`[DELETE ${requestId}] ❌ 无权删除此记录`);
       return NextResponse.json(
         { success: false, message: "无权删除此记录" },
         { status: 403 }
@@ -271,14 +294,23 @@ export async function DELETE(request: NextRequest) {
     }
 
     // 使用SDK删除记录（通过_id）
+    console.log(`[DELETE ${requestId}] ========== 删除记录 ==========`);
+    console.log(`[DELETE ${requestId}] 📤 删除请求（原始数据）:`, JSON.stringify({
+      collection: COLLECTION_NAME,
+      docId: _id,
+    }, null, 2));
+    
     const result: any = await db
       .collection(COLLECTION_NAME)
       .doc(_id)
       .remove();
+    
+    console.log(`[DELETE ${requestId}] 📥 删除响应（原始数据）:`, JSON.stringify(result, null, 2));
 
     // 检查是否有错误（根据文档，应该检查 typeof result.code === 'string'）
     if (typeof result.code === 'string') {
-      console.error("删除记录失败:", result);
+      const totalTime = Date.now() - requestStartTime;
+      console.error(`[DELETE ${requestId}] ❌ 删除记录失败，总耗时: ${totalTime}ms`, result);
       // 如果记录不存在，也视为成功（幂等性）
       if (result.code === 'DATABASE_PERMISSION_DENIED' || result.message?.includes('not found')) {
         return NextResponse.json({
@@ -296,13 +328,21 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    const totalTime = Date.now() - requestStartTime;
+    console.log(`[DELETE ${requestId}] ✅ 删除成功，总耗时: ${totalTime}ms`);
     return NextResponse.json({
       success: true,
       message: "删除成功",
       deleted: result.deleted || 0,
     });
   } catch (error: any) {
-    console.error("删除对比记录错误:", error);
+    const totalTime = Date.now() - requestStartTime;
+    console.error(`[DELETE ${requestId}] ❌ 删除对比记录错误，总耗时: ${totalTime}ms`, {
+      error: error.message,
+      stack: error.stack,
+      name: error.name,
+      errorString: String(error),
+    });
     return NextResponse.json(
       {
         success: false,
@@ -315,7 +355,13 @@ export async function DELETE(request: NextRequest) {
 
 // PATCH: 更新对比记录状态或审核状态
 export async function PATCH(request: NextRequest) {
+  const requestStartTime = Date.now();
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
   try {
+    console.log(`[PATCH ${requestId}] ========== 开始处理请求 ==========`);
+    console.log(`[PATCH ${requestId}] 请求时间: ${new Date().toISOString()}`);
+    
     const body = await request.json();
     const { 
       _id, 
@@ -332,16 +378,10 @@ export async function PATCH(request: NextRequest) {
       username, // 用户名（必填）
     } = body; // 使用数据库的_id字段
 
-    console.log("🔵 [PATCH API] 收到更新请求:", {
-      _id,
-      username,
-      hasRawCozeResponse: rawCozeResponse !== undefined,
-      rawCozeResponseType: typeof rawCozeResponse,
-      rawCozeResponseKeys: rawCozeResponse ? Object.keys(rawCozeResponse) : [],
-    });
+    console.log(`[PATCH ${requestId}] 📥 收到更新请求（原始数据）:`, JSON.stringify(body, null, 2));
 
     if (!_id) {
-      console.error("❌ [PATCH API] 缺少记录ID");
+      console.error(`[PATCH ${requestId}] ❌ 缺少记录ID`);
       return NextResponse.json(
         { success: false, message: "缺少记录ID（_id）" },
         { status: 400 }
@@ -349,31 +389,35 @@ export async function PATCH(request: NextRequest) {
     }
 
     if (!username) {
-      console.error("❌ [PATCH API] 缺少用户名参数");
+      console.error(`[PATCH ${requestId}] ❌ 缺少用户名参数`);
       return NextResponse.json(
         { success: false, message: "缺少用户名参数" },
         { status: 400 }
       );
     }
 
+    console.log(`[PATCH ${requestId}] 开始初始化数据库连接...`);
+    const dbInitStartTime = Date.now();
     const db = getDatabase();
+    const dbInitTime = Date.now() - dbInitStartTime;
+    console.log(`[PATCH ${requestId}] 数据库连接初始化完成，耗时: ${dbInitTime}ms`);
 
     // 先查询记录，验证是否属于当前用户
-    console.log("🔵 [PATCH API] 查询记录，ID:", _id);
+    console.log(`[PATCH ${requestId}] ========== 查询记录 ==========`);
+    console.log(`[PATCH ${requestId}] 📤 查询请求（原始数据）:`, JSON.stringify({
+      collection: COLLECTION_NAME,
+      docId: _id,
+    }, null, 2));
+    
     const recordResult: any = await db
       .collection(COLLECTION_NAME)
       .doc(_id)
       .get();
 
-    console.log("🔵 [PATCH API] 查询结果:", {
-      hasCode: typeof recordResult.code === 'string',
-      code: recordResult.code,
-      hasData: !!recordResult.data,
-      dataLength: recordResult.data?.length || 0,
-    });
+    console.log(`[PATCH ${requestId}] 📥 查询响应（原始数据）:`, JSON.stringify(recordResult, null, 2));
 
     if (typeof recordResult.code === 'string' || !recordResult.data || recordResult.data.length === 0) {
-      console.error("❌ [PATCH API] 记录不存在");
+      console.error(`[PATCH ${requestId}] ❌ 记录不存在`);
       return NextResponse.json(
         { success: false, message: "记录不存在" },
         { status: 404 }
@@ -381,7 +425,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const record = recordResult.data[0];
-    console.log("🔵 [PATCH API] 记录信息:", {
+    console.log(`[PATCH ${requestId}] 记录信息:`, {
       recordId: record._id,
       recordUsername: record.username,
       requestUsername: username,
@@ -389,7 +433,7 @@ export async function PATCH(request: NextRequest) {
     });
 
     if (record.username !== username) {
-      console.error("❌ [PATCH API] 无权更新此记录");
+      console.error(`[PATCH ${requestId}] ❌ 无权更新此记录`);
       return NextResponse.json(
         { success: false, message: "无权更新此记录" },
         { status: 403 }
@@ -443,18 +487,18 @@ export async function PATCH(request: NextRequest) {
 
     // 更新原始扣子API返回数据（如果提供）
     if (rawCozeResponse !== undefined) {
-      console.log("🔵 [PATCH API] 准备更新 rawCozeResponse");
+      console.log(`[PATCH ${requestId}] 准备更新 rawCozeResponse`);
       try {
         const serialized = rawCozeResponse ? JSON.stringify(rawCozeResponse) : null;
         updateData.rawCozeResponse = serialized;
-        console.log("🔵 [PATCH API] rawCozeResponse 序列化成功，长度:", serialized?.length || 0);
+        console.log(`[PATCH ${requestId}] rawCozeResponse 序列化成功，长度: ${serialized?.length || 0}`);
         
         // 验证序列化后的数据（需要解析两层 data）
         if (serialized) {
           try {
             const parsed = JSON.parse(serialized);
-            console.log("🔵 [PATCH API] 验证序列化数据:");
-            console.log("🔵 [PATCH API] 第一层数据结构:", {
+            console.log(`[PATCH ${requestId}] 验证序列化数据:`);
+            console.log(`[PATCH ${requestId}] 第一层数据结构:`, {
               hasData: !!parsed?.data,
               dataType: typeof parsed?.data,
               dataKeys: parsed ? Object.keys(parsed) : [],
@@ -465,15 +509,15 @@ export async function PATCH(request: NextRequest) {
             if (typeof firstDataObj === 'string') {
               try {
                 firstDataObj = JSON.parse(firstDataObj);
-                console.log("🔵 [PATCH API] 第一层 data 字段是字符串，解析成功");
+                console.log(`[PATCH ${requestId}] 第一层 data 字段是字符串，解析成功`);
               } catch (e) {
-                console.error("❌ [PATCH API] 解析第一层 data 字符串失败:", e);
+                console.error(`[PATCH ${requestId}] ❌ 解析第一层 data 字符串失败:`, e);
               }
             }
             
             // 解析第二层 data
             if (firstDataObj && typeof firstDataObj === 'object') {
-              console.log("🔵 [PATCH API] 第一层 data 对象结构:", {
+              console.log(`[PATCH ${requestId}] 第一层 data 对象结构:`, {
                 hasData: !!firstDataObj.data,
                 dataDataType: typeof firstDataObj.data,
                 keys: Object.keys(firstDataObj),
@@ -483,31 +527,31 @@ export async function PATCH(request: NextRequest) {
               if (typeof secondDataObj === 'string') {
                 try {
                   secondDataObj = JSON.parse(secondDataObj);
-                  console.log("🔵 [PATCH API] 第二层 data.data 字段是字符串，解析成功");
+                  console.log(`[PATCH ${requestId}] 第二层 data.data 字段是字符串，解析成功`);
                 } catch (e) {
-                  console.error("❌ [PATCH API] 解析第二层 data.data 字符串失败:", e);
+                  console.error(`[PATCH ${requestId}] ❌ 解析第二层 data.data 字符串失败:`, e);
                 }
               }
               
               if (secondDataObj && typeof secondDataObj === 'object') {
-                console.log("🔵 [PATCH API] 第二层 data.data 对象结构:", {
+                console.log(`[PATCH ${requestId}] 第二层 data.data 对象结构:`, {
                   hasDetailed: !!secondDataObj.detailed,
                   keys: Object.keys(secondDataObj),
                 });
-                console.log("🔵 [PATCH API] detailed长度:", secondDataObj.detailed?.length || 0);
-                console.log("🔵 [PATCH API] detailed预览:", secondDataObj.detailed?.substring(0, 100) || "");
+                console.log(`[PATCH ${requestId}] detailed长度: ${secondDataObj.detailed?.length || 0}`);
+                console.log(`[PATCH ${requestId}] detailed预览: ${secondDataObj.detailed?.substring(0, 100) || ""}`);
               } else {
-                console.warn("⚠️ [PATCH API] 第二层 data.data 不是对象:", typeof secondDataObj);
+                console.warn(`[PATCH ${requestId}] ⚠️ 第二层 data.data 不是对象:`, typeof secondDataObj);
               }
             } else {
-              console.warn("⚠️ [PATCH API] 第一层 data 不是对象:", typeof firstDataObj);
+              console.warn(`[PATCH ${requestId}] ⚠️ 第一层 data 不是对象:`, typeof firstDataObj);
             }
           } catch (e) {
-            console.error("❌ [PATCH API] 序列化数据验证失败:", e);
+            console.error(`[PATCH ${requestId}] ❌ 序列化数据验证失败:`, e);
           }
         }
       } catch (e) {
-        console.error("❌ [PATCH API] 序列化 rawCozeResponse 失败:", e);
+        console.error(`[PATCH ${requestId}] ❌ 序列化 rawCozeResponse 失败:`, e);
         return NextResponse.json(
           {
             success: false,
@@ -523,11 +567,12 @@ export async function PATCH(request: NextRequest) {
       updateData.add_time = add_time;
     }
 
-    console.log("🔵 [PATCH API] 准备更新数据库，更新数据键:", Object.keys(updateData));
-    console.log("🔵 [PATCH API] updateData:", {
-      ...updateData,
-      rawCozeResponse: updateData.rawCozeResponse ? `[字符串长度: ${updateData.rawCozeResponse.length}]` : null,
-    });
+    console.log(`[PATCH ${requestId}] ========== 更新记录 ==========`);
+    console.log(`[PATCH ${requestId}] 📤 更新请求（原始数据）:`, JSON.stringify({
+      collection: COLLECTION_NAME,
+      docId: _id,
+      updateData: updateData,
+    }, null, 2));
 
     // 使用SDK更新记录（通过数据库的_id）
     const result: any = await db
@@ -535,17 +580,12 @@ export async function PATCH(request: NextRequest) {
       .doc(_id)
       .update(updateData);
 
-    console.log("🔵 [PATCH API] 数据库更新结果:", {
-      hasCode: typeof result.code === 'string',
-      code: result.code,
-      message: result.message,
-      updated: result.updated,
-      resultKeys: Object.keys(result),
-    });
+    console.log(`[PATCH ${requestId}] 📥 更新响应（原始数据）:`, JSON.stringify(result, null, 2));
 
     // 检查是否有错误（根据文档，应该检查 typeof result.code === 'string'）
     if (typeof result.code === 'string') {
-      console.error("❌ [PATCH API] 更新记录失败:", result);
+      const totalTime = Date.now() - requestStartTime;
+      console.error(`[PATCH ${requestId}] ❌ 更新记录失败，总耗时: ${totalTime}ms`, result);
       // 如果记录不存在，返回404
       if (result.code === 'DATABASE_PERMISSION_DENIED' || result.message?.includes('not found')) {
         return NextResponse.json(
@@ -567,14 +607,21 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    console.log("✅ [PATCH API] 更新成功");
+    const totalTime = Date.now() - requestStartTime;
+    console.log(`[PATCH ${requestId}] ✅ 更新成功，总耗时: ${totalTime}ms`);
     return NextResponse.json({
       success: true,
       message: "更新成功",
       data: result,
     });
   } catch (error: any) {
-    console.error("更新对比记录错误:", error);
+    const totalTime = Date.now() - requestStartTime;
+    console.error(`[PATCH ${requestId}] ❌ 更新对比记录错误，总耗时: ${totalTime}ms`, {
+      error: error.message,
+      stack: error.stack,
+      name: error.name,
+      errorString: String(error),
+    });
     return NextResponse.json(
       {
         success: false,
@@ -628,8 +675,14 @@ export async function GET(request: NextRequest) {
 
     if (recordId) {
       // 查询单个记录（通过数据库的_id）
-      console.log(`[GET ${requestId}] 查询单个记录，recordId: ${recordId}`);
+      console.log(`[GET ${requestId}] ========== 查询单个记录 ==========`);
+      console.log(`[GET ${requestId}] 查询参数:`, {
+        collection: COLLECTION_NAME,
+        docId: recordId,
+      });
+      
       const singleQueryStartTime = Date.now();
+      console.log(`[GET ${requestId}] 📤 发送数据库查询请求...`);
       
       const result: any = await db
         .collection(COLLECTION_NAME)
@@ -637,6 +690,7 @@ export async function GET(request: NextRequest) {
         .get();
 
       const singleQueryTime = Date.now() - singleQueryStartTime;
+      console.log(`[GET ${requestId}] 📥 数据库查询响应（原始数据）:`, JSON.stringify(result, null, 2));
       console.log(`[GET ${requestId}] 单个记录查询完成，耗时: ${singleQueryTime}ms`);
 
       if (typeof result.code === 'string') {
@@ -693,15 +747,18 @@ export async function GET(request: NextRequest) {
       });
     } else {
       // 列表查询（分页或全部）
-      console.log(`[GET ${requestId}] 开始列表查询，模式: ${getAll ? '全部导出' : '分页查询'}`);
+      console.log(`[GET ${requestId}] ========== 开始列表查询 ==========`);
+      console.log(`[GET ${requestId}] 查询模式: ${getAll ? '全部导出' : '分页查询'}`);
       
       // 分页查询所有记录（只查询status为done且属于当前用户的记录）
-      console.log(`[GET ${requestId}] 构建查询条件:`, {
+      const queryConditions = {
         collection: COLLECTION_NAME,
         where: { status: "done", username },
         orderBy: "createTime",
         order: "desc",
-      });
+      };
+      
+      console.log(`[GET ${requestId}] 📋 构建查询条件（原始数据）:`, JSON.stringify(queryConditions, null, 2));
       
       let query = db
         .collection(COLLECTION_NAME)
@@ -720,13 +777,29 @@ export async function GET(request: NextRequest) {
       } else {
         // 正常分页查询
         query = query.skip(skip).limit(pageSize);
-        console.log(`[GET ${requestId}] 分页查询，skip: ${skip}, limit: ${pageSize}`);
+        console.log(`[GET ${requestId}] 分页查询参数:`, {
+          skip,
+          limit: pageSize,
+        });
       }
 
+      const queryRequest = {
+        collection: COLLECTION_NAME,
+        where: { status: "done", username },
+        orderBy: "createTime",
+        order: "desc",
+        skip: getAll ? undefined : skip,
+        limit: getAll ? 1000 : pageSize,
+      };
+      
+      console.log(`[GET ${requestId}] 📤 发送数据库查询请求（原始数据）:`, JSON.stringify(queryRequest, null, 2));
       console.log(`[GET ${requestId}] 开始执行数据查询...`);
       const dataQueryStartTime = Date.now();
+      
       const result: any = await query.get();
+      
       const dataQueryTime = Date.now() - dataQueryStartTime;
+      console.log(`[GET ${requestId}] 📥 数据库查询响应（原始数据）:`, JSON.stringify(result, null, 2));
       console.log(`[GET ${requestId}] 数据查询完成，耗时: ${dataQueryTime}ms`);
 
       if (typeof result.code === 'string') {
@@ -771,8 +844,19 @@ export async function GET(request: NextRequest) {
 
       // 查询总数（先查询所有记录，然后计算总数）
       // 注意：Node.js SDK可能没有count方法，所以先查询所有记录
-      console.log(`[GET ${requestId}] 开始查询总数...`);
+      console.log(`[GET ${requestId}] ========== 开始查询总数 ==========`);
       const countQueryStartTime = Date.now();
+      
+      const countQueryConditions = {
+        collection: COLLECTION_NAME,
+        where: {
+          status: "done",
+          username: username,
+        },
+        field: { _id: true },
+      };
+      
+      console.log(`[GET ${requestId}] 📋 总数查询条件（原始数据）:`, JSON.stringify(countQueryConditions, null, 2));
       
       const countQuery = db
         .collection(COLLECTION_NAME)
@@ -783,9 +867,13 @@ export async function GET(request: NextRequest) {
       
       // 获取总数（通过查询所有记录，但只取第一个字段来获取总数）
       // 由于SDK限制，我们使用一个技巧：查询所有记录但只获取_id字段
+      console.log(`[GET ${requestId}] 📤 发送总数查询请求（原始数据）:`, JSON.stringify(countQueryConditions, null, 2));
       console.log(`[GET ${requestId}] 执行总数查询（仅查询_id字段）...`);
+      
       const allRecords: any = await countQuery.field({ _id: true }).get();
+      
       const countQueryTime = Date.now() - countQueryStartTime;
+      console.log(`[GET ${requestId}] 📥 总数查询响应（原始数据）:`, JSON.stringify(allRecords, null, 2));
       console.log(`[GET ${requestId}] 总数查询完成，耗时: ${countQueryTime}ms`);
       
       let total = 0;
