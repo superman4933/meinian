@@ -73,12 +73,14 @@ function FileDisplay({
   onDelete,
   onPreview,
   onUpload,
+  disabled,
 }: {
   file: FileInfo | null;
   type: "thisYear" | "lastYear";
   onDelete?: () => void;
   onPreview: () => void;
   onUpload?: () => void;
+  disabled?: boolean;
 }) {
   if (!file) {
     return (
@@ -89,9 +91,15 @@ function FileDisplay({
           {onUpload && (
             <button
               onClick={onUpload}
-              className="text-xs text-blue-600 hover:text-blue-800 mt-1"
+              disabled={disabled}
+              className={`text-xs mt-1 ${
+                disabled
+                  ? "text-slate-400 cursor-not-allowed"
+                  : "text-blue-600 hover:text-blue-800"
+              }`}
+              title={disabled ? "请等待另一个区域文件上传完成" : ""}
             >
-              点击上传
+              {disabled ? "等待中..." : "点击上传"}
             </button>
           )}
         </div>
@@ -1742,7 +1750,7 @@ interface ComparisonTableProps {
 }
 
 export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTableProps) {
-  const { comparisons, removeFile, updateComparison, addFile, removeComparison, getComparisonByCity } = useFileContext();
+  const { comparisons, removeFile, updateComparison, addFile, removeComparison, getComparisonByCity, isUploadingType, setUploadingType } = useFileContext();
   const [openPreviews, setOpenPreviews] = useState<Set<string>>(new Set());
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
   const [detailModal, setDetailModal] = useState<{ open: boolean; row: ComparisonRow | null }>({
@@ -1865,6 +1873,14 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
   }, []);
 
   const handleFileUpload = async (rowId: string, type: "thisYear" | "lastYear") => {
+    // 检查另一个区域是否正在上传
+    const otherType = type === "thisYear" ? "lastYear" : "thisYear";
+    if (isUploadingType(otherType)) {
+      const otherTypeName = otherType === "thisYear" ? "新年度" : "旧年度";
+      showToast(`请等待${otherTypeName}文件上传完成后再上传`, "error");
+      return;
+    }
+
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".pdf,.doc,.docx";
@@ -1874,10 +1890,10 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
 
       const file = files[0];
       
-      // 文件大小限制：20MB
-      const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+      // 文件大小限制：100MB
+      const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
       if (file.size > MAX_FILE_SIZE) {
-        showToast(`文件大小超过限制（最大 20MB），当前文件：${formatFileSize(file.size)}`, "error");
+        showToast(`文件大小超过限制（最大 100MB），当前文件：${formatFileSize(file.size)}`, "error");
         return;
       }
       
@@ -1887,12 +1903,15 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       // 直接使用当前行的city，不进行城市匹配校验
       const city = rowId;
 
-      // 检查是否正在对比中
+      // 检查是否正在对比中或等待中
       const existingComparison = getComparisonByCity(city);
-      if (existingComparison && existingComparison.comparisonStatus === "comparing") {
-        showToast("该文件正在对比中，无法替换。请等待对比完成后再上传。", "error");
+      if (existingComparison && (existingComparison.comparisonStatus === "comparing" || existingComparison.comparisonStatus === "waiting")) {
+        showToast("该文件正在对比中或等待对比，无法替换。请等待对比完成后再上传。", "error");
         return;
       }
+
+      // 设置上传状态
+      setUploadingType(type, true);
 
       // 创建文件信息
       const fileInfo = {
@@ -1911,6 +1930,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       const addResult = addFile(fileInfo);
       if (!addResult.success) {
         showToast(addResult.message || "文件上传被阻止", "error");
+        setUploadingType(type, false); // 清除上传状态
         return;
       }
 
@@ -1952,7 +1972,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
             if (response.status === 401) {
               errorMessage = "认证失败，请检查API Token";
             } else if (response.status === 413) {
-              errorMessage = "文件过大，请选择小于 20MB 的文件";
+              errorMessage = "文件过大，请选择小于 100MB 的文件";
             } else if (response.status >= 500) {
               errorMessage = "服务器错误，请稍后重试";
             } else if (data.error_source === "七牛云") {
@@ -1997,8 +2017,11 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         if (!updateResult.success) {
           // 如果更新失败（可能因为对比状态变化），显示错误提示
           showToast(updateResult.message || "文件上传成功，但无法更新列表（可能正在对比中）", "error");
+          setUploadingType(type, false); // 清除上传状态
           return;
         }
+        // 上传成功，清除上传状态
+        setUploadingType(type, false);
       } catch (error: any) {
         // 更新为错误状态（创建新对象）
         let errorMessage = "上传失败";
@@ -2015,6 +2038,8 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         };
         // 上传失败时更新错误状态，即使对比中也要更新（因为上传已经失败了）
         addFile(errorFileInfo);
+        // 清除上传状态
+        setUploadingType(type, false);
       }
     };
     input.click();
@@ -3100,7 +3125,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
 
     switch (filterStatus) {
       case "可比对":
-        return hasBothFileIds && row.comparisonStatus !== "comparing";
+        return hasBothFileIds && row.comparisonStatus !== "comparing" && row.comparisonStatus !== "waiting";
       case "缺文件":
         return !hasBothFiles || !hasBothFileIds;
       case "已完成":
@@ -3393,6 +3418,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                         onDelete={showHistory ? undefined : () => row.lastYearFile && handleFileDelete(row.lastYearFile.id)}
                         onPreview={() => row.lastYearFile && handleFilePreview(row.lastYearFile)}
                         onUpload={showHistory ? undefined : () => handleFileUpload(row.id, "lastYear")}
+                        disabled={showHistory ? false : isUploadingType("thisYear")}
                       />
                     </td>
 
@@ -3403,6 +3429,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                         onDelete={showHistory ? undefined : () => row.thisYearFile && handleFileDelete(row.thisYearFile.id)}
                         onPreview={() => row.thisYearFile && handleFilePreview(row.thisYearFile)}
                         onUpload={showHistory ? undefined : () => handleFileUpload(row.id, "thisYear")}
+                        disabled={showHistory ? false : isUploadingType("lastYear")}
                       />
                     </td>
 
@@ -3410,6 +3437,14 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                       <div className="flex flex-col items-center gap-1">
                         {row.comparisonStatus === "none" && (
                           <span className="text-xs text-slate-500">未对比</span>
+                        )}
+                        {row.comparisonStatus === "waiting" && (
+                          <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            等待中
+                          </span>
                         )}
                         {row.comparisonStatus === "comparing" && (
                           <span className="inline-flex items-center gap-1 text-xs text-blue-600">
@@ -3626,6 +3661,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                       onDelete={() => row.lastYearFile && handleFileDelete(row.lastYearFile.id)}
                       onPreview={() => row.lastYearFile && handleFilePreview(row.lastYearFile)}
                       onUpload={() => handleFileUpload(row.id, "lastYear")}
+                      disabled={isUploadingType("thisYear")}
                     />
                   </div>
                   
@@ -3637,6 +3673,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                       onDelete={() => row.thisYearFile && handleFileDelete(row.thisYearFile.id)}
                       onPreview={() => row.thisYearFile && handleFilePreview(row.thisYearFile)}
                       onUpload={() => handleFileUpload(row.id, "thisYear")}
+                      disabled={isUploadingType("lastYear")}
                     />
                   </div>
                 </div>
@@ -3646,6 +3683,14 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                   <div className="flex flex-col items-center gap-1">
                     {row.comparisonStatus === "none" && (
                       <span className="text-xs text-slate-500">未对比</span>
+                    )}
+                    {row.comparisonStatus === "waiting" && (
+                      <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        等待中
+                      </span>
                     )}
                     {row.comparisonStatus === "comparing" && (
                       <span className="inline-flex items-center gap-1 text-xs text-blue-600">

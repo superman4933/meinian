@@ -14,24 +14,75 @@ export function FileUpload({ type }: FileUploadProps) {
   const title = isLastYear ? "上传旧年度文件" : "上传新年度文件";
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const { addFile, getComparisonByCity } = useFileContext();
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState({ current: 0, total: 0 });
+  const { addFile, getComparisonByCity, isUploadingType, setUploadingType } = useFileContext();
 
   const handleFileSelect = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
+    
+    // 检查另一个区域是否正在上传
+    const otherType = type === "thisYear" ? "lastYear" : "thisYear";
+    if (isUploadingType(otherType)) {
+      const otherTypeName = otherType === "thisYear" ? "新年度" : "旧年度";
+      const toast = document.createElement("div");
+      toast.className = "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-orange-500 text-white px-6 py-4 rounded-lg shadow-xl text-sm max-w-md text-center";
+      toast.textContent = `请等待${otherTypeName}文件上传完成后再上传`;
+      toast.style.opacity = "0";
+      toast.style.transition = "opacity 0.3s";
+      document.body.appendChild(toast);
+      setTimeout(() => { toast.style.opacity = "1"; }, 10);
+      setTimeout(() => {
+        toast.style.opacity = "0";
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+      return;
+    }
+    
+    // 如果正在上传，禁止再次上传
+    if (isUploading) {
+      const toast = document.createElement("div");
+      toast.className = "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-orange-500 text-white px-6 py-4 rounded-lg shadow-xl text-sm";
+      toast.textContent = "文件正在上传中，请等待上传完成";
+      toast.style.opacity = "0";
+      toast.style.transition = "opacity 0.3s";
+      document.body.appendChild(toast);
+      setTimeout(() => { toast.style.opacity = "1"; }, 10);
+      setTimeout(() => {
+        toast.style.opacity = "0";
+        setTimeout(() => toast.remove(), 300);
+      }, 2700);
+      return;
+    }
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      await uploadFile(file);
+    setIsUploading(true);
+    setUploadingType(type, true); // 设置全局上传状态
+    setUploadProgress({ current: 0, total: files.length });
+
+    try {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        await uploadFile(file, i + 1, files.length);
+        setUploadProgress({ current: i + 1, total: files.length });
+      }
+    } finally {
+      setIsUploading(false);
+      setUploadingType(type, false); // 清除全局上传状态
+      setUploadProgress({ current: 0, total: 0 });
+      // 清空文件输入，允许再次选择相同文件
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
     }
   };
 
-  const uploadFile = async (file: File) => {
-    // 文件大小限制：20MB
-    const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+  const uploadFile = async (file: File, currentIndex: number, totalCount: number) => {
+    // 文件大小限制：100MB
+    const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
     if (file.size > MAX_FILE_SIZE) {
       const toast = document.createElement("div");
       toast.className = "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-red-500 text-white px-6 py-4 rounded-lg shadow-xl text-sm";
-      toast.textContent = `文件大小超过限制（最大 20MB），当前文件：${formatFileSize(file.size)}`;
+      toast.textContent = `文件大小超过限制（最大 100MB），当前文件：${formatFileSize(file.size)}`;
       toast.style.opacity = "0";
       toast.style.transition = "opacity 0.3s";
       document.body.appendChild(toast);
@@ -138,7 +189,7 @@ export function FileUpload({ type }: FileUploadProps) {
           if (response.status === 401) {
             errorMessage = "认证失败，请检查API Token";
           } else if (response.status === 413) {
-            errorMessage = "文件过大，请选择小于 20MB 的文件";
+            errorMessage = "文件过大，请选择小于 100MB 的文件";
           } else if (response.status >= 500) {
             errorMessage = "服务器错误，请稍后重试";
           } else if (data.error_source === "扣子API") {
@@ -213,6 +264,9 @@ export function FileUpload({ type }: FileUploadProps) {
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+    // 检查另一个区域是否正在上传
+    const otherType = type === "thisYear" ? "lastYear" : "thisYear";
+    if (isUploadingType(otherType) || isUploading) return;
     setIsDragging(true);
   };
 
@@ -224,6 +278,38 @@ export function FileUpload({ type }: FileUploadProps) {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
+    // 检查另一个区域是否正在上传
+    const otherType = type === "thisYear" ? "lastYear" : "thisYear";
+    if (isUploadingType(otherType)) {
+      const otherTypeName = otherType === "thisYear" ? "新年度" : "旧年度";
+      const toast = document.createElement("div");
+      toast.className = "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-orange-500 text-white px-6 py-4 rounded-lg shadow-xl text-sm max-w-md text-center";
+      toast.textContent = `请等待${otherTypeName}文件上传完成后再上传`;
+      toast.style.opacity = "0";
+      toast.style.transition = "opacity 0.3s";
+      document.body.appendChild(toast);
+      setTimeout(() => { toast.style.opacity = "1"; }, 10);
+      setTimeout(() => {
+        toast.style.opacity = "0";
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+      return;
+    }
+    // 如果正在上传，不允许拖拽上传
+    if (isUploading) {
+      const toast = document.createElement("div");
+      toast.className = "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-orange-500 text-white px-6 py-4 rounded-lg shadow-xl text-sm";
+      toast.textContent = "文件正在上传中，请等待上传完成";
+      toast.style.opacity = "0";
+      toast.style.transition = "opacity 0.3s";
+      document.body.appendChild(toast);
+      setTimeout(() => { toast.style.opacity = "1"; }, 10);
+      setTimeout(() => {
+        toast.style.opacity = "0";
+        setTimeout(() => toast.remove(), 300);
+      }, 2700);
+      return;
+    }
     handleFileSelect(e.dataTransfer.files);
   };
 
@@ -238,9 +324,14 @@ export function FileUpload({ type }: FileUploadProps) {
   const hintColor = isLastYear ? "text-amber-600" : "text-blue-600";
   const formatHint = isLastYear ? "text-amber-500" : "text-blue-500";
 
+  // 检查另一个区域是否正在上传
+  const otherType = type === "thisYear" ? "lastYear" : "thisYear";
+  const otherTypeUploading = isUploadingType(otherType);
+  const isDisabled = isUploading || otherTypeUploading;
+
   return (
     <div
-      className={`rounded-2xl border-2 border-dashed ${borderColor} ${bgColor} p-6 ${hoverBorderColor} ${hoverBgColor} transition-colors ${isDragging ? "ring-2 ring-blue-500" : ""}`}
+      className={`rounded-2xl border-2 border-dashed ${borderColor} ${bgColor} p-6 ${hoverBorderColor} ${hoverBgColor} transition-colors ${isDragging && !isDisabled ? "ring-2 ring-blue-500" : ""} ${isDisabled ? "opacity-75 cursor-not-allowed" : ""}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -257,9 +348,41 @@ export function FileUpload({ type }: FileUploadProps) {
           </svg>
           <span className="text-sm font-semibold">{title}</span>
         </div>
+        
+        {/* 上传进度显示 */}
+        {isUploading && (
+          <div className="flex flex-col items-center gap-2 w-full">
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
+              <svg className="h-4 w-4 animate-spin text-blue-600" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span>正在上传第 {uploadProgress.current} / {uploadProgress.total} 个文件</span>
+            </div>
+            <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+              <div 
+                className="h-full bg-blue-600 transition-all duration-300"
+                style={{ width: `${(uploadProgress.current / uploadProgress.total) * 100}%` }}
+              ></div>
+            </div>
+          </div>
+        )}
+
+        {/* 另一个区域正在上传的提示 */}
+        {otherTypeUploading && !isUploading && (
+          <div className="flex items-center gap-2 text-sm font-medium text-orange-600">
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>请等待{otherType === "thisYear" ? "新年度" : "旧年度"}文件上传完成</span>
+          </div>
+        )}
+        
         <div className="flex flex-col items-center gap-2">
           <label
-            className={`rounded-xl border ${buttonBorder} bg-white px-4 py-2 text-sm font-medium ${buttonText} ${buttonHover} cursor-pointer transition-colors`}
+            className={`rounded-xl border ${buttonBorder} bg-white px-4 py-2 text-sm font-medium ${buttonText} ${buttonHover} transition-colors ${
+              isDisabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+            }`}
           >
             <input
               ref={fileInputRef}
@@ -268,12 +391,15 @@ export function FileUpload({ type }: FileUploadProps) {
               accept=".pdf,.doc,.docx"
               className="hidden"
               onChange={(e) => handleFileSelect(e.target.files)}
+              disabled={isDisabled}
             />
-            <span>选择文件</span>
+            <span>{isUploading ? "上传中..." : otherTypeUploading ? "等待中..." : "选择文件"}</span>
           </label>
-          <span className={`text-xs ${hintColor}`}>或拖拽文件到此处</span>
+          {!isDisabled && (
+            <span className={`text-xs ${hintColor}`}>或拖拽文件到此处</span>
+          )}
         </div>
-        <div className={`text-xs ${formatHint}`}>支持 PDF、DOC、DOCX 格式</div>
+        <div className={`text-xs ${formatHint}`}>支持 PDF、DOC、DOCX 格式，单个文件最大 100MB</div>
       </div>
     </div>
   );

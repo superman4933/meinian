@@ -363,8 +363,8 @@ export default function StandardComparePage() {
             );
         }
 
-        // 检查文件大小（超过20MB的文件不能上传）
-        const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+        // 检查文件大小（超过100MB的文件不能上传）
+        const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
         const oversizedFiles: File[] = [];
         const sizeValidFiles: File[] = [];
 
@@ -381,7 +381,7 @@ export default function StandardComparePage() {
             const oversizedNames = oversizedFiles.map(f => f.name).join("、");
             const oversizedCount = oversizedFiles.length;
             showToast(
-                `有 ${oversizedCount} 个文件超过大小限制（最大 20MB），已自动跳过：${oversizedNames.length > 50 ? oversizedNames.substring(0, 50) + "..." : oversizedNames}`,
+                `有 ${oversizedCount} 个文件超过大小限制（最大 100MB），已自动跳过：${oversizedNames.length > 50 ? oversizedNames.substring(0, 50) + "..." : oversizedNames}`,
                 "error"
             );
         }
@@ -390,7 +390,7 @@ export default function StandardComparePage() {
         if (sizeValidFiles.length === 0) {
             // 如果所有文件都超过大小限制
             if (oversizedFiles.length > 0 && duplicateFiles.length === 0) {
-                showToast(`所有文件都超过大小限制（最大 20MB），共 ${oversizedFiles.length} 个文件`, "error");
+                showToast(`所有文件都超过大小限制（最大 100MB），共 ${oversizedFiles.length} 个文件`, "error");
             } else if (duplicateFiles.length > 0 && oversizedFiles.length === 0) {
                 showToast(`所有文件都已存在列表中，共 ${duplicateFiles.length} 个文件`, "error");
             } else if (duplicateFiles.length > 0 && oversizedFiles.length > 0) {
@@ -456,7 +456,7 @@ export default function StandardComparePage() {
             failureReasons.push(`${duplicateCount} 个文件已存在`);
         }
         if (oversizedCount > 0) {
-            failureReasons.push(`${oversizedCount} 个文件超过大小限制（最大 20MB）`);
+            failureReasons.push(`${oversizedCount} 个文件超过大小限制（最大 100MB）`);
         }
 
         // 统计其他失败原因
@@ -496,9 +496,9 @@ export default function StandardComparePage() {
         file: File,
         fileId: string
     ): Promise<{ success: boolean; error?: string }> => {
-        const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+        const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
         if (file.size > MAX_FILE_SIZE) {
-            const errorMsg = `文件大小超过限制（最大 20MB）`;
+            const errorMsg = `文件大小超过限制（最大 100MB）`;
             setFiles((prev) =>
                 prev.map((f) =>
                     f.id === fileId
@@ -2121,7 +2121,7 @@ export default function StandardComparePage() {
                         </svg>
                         <div>
                             <p className="text-lg font-semibold text-slate-700">批量上传政策文件</p>
-                            <p className="text-sm text-slate-500 mt-1">支持批量上传，单个文件最大 20MB，支持拖拽上传</p>
+                            <p className="text-sm text-slate-500 mt-1">支持批量上传，单个文件最大 100MB，支持拖拽上传</p>
                         </div>
                         <button
                             onClick={() => fileInputRef.current?.click()}

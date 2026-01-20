@@ -36,7 +36,7 @@ export interface ComparisonRow {
   company: string; // 分公司名称（城市名）
   thisYearFile: FileInfo | null;
   lastYearFile: FileInfo | null;
-  comparisonStatus: "none" | "comparing" | "done" | "error";
+  comparisonStatus: "none" | "waiting" | "comparing" | "done" | "error";
   comparisonResult?: any; // 原始结果（可能是字符串或结构化数据）
   comparisonStructured?: ComparisonStructuredData; // JSON格式的结构化数据
   isJsonFormat?: boolean; // 标识是否是JSON格式
@@ -56,6 +56,8 @@ interface FileContextType {
   updateComparison: (city: string, updates: Partial<ComparisonRow>) => void;
   resetComparisons: () => void;
   removeComparison: (comparisonId: string) => void; // 删除对比行（包括数据库记录）
+  isUploadingType: (type: "thisYear" | "lastYear") => boolean; // 检查某个类型是否正在上传
+  setUploadingType: (type: "thisYear" | "lastYear", uploading: boolean) => void; // 设置某个类型的上传状态
 }
 
 const FileContext = createContext<FileContextType | undefined>(undefined);
@@ -63,6 +65,7 @@ const FileContext = createContext<FileContextType | undefined>(undefined);
 export function FileProvider({ children }: { children: ReactNode }) {
   const [files, setFiles] = useState<FileInfo[]>([]);
   const [comparisons, setComparisons] = useState<ComparisonRow[]>([]);
+  const [uploadingTypes, setUploadingTypes] = useState<Set<"thisYear" | "lastYear">>(new Set());
 
   const addFile = (file: FileInfo): { success: boolean; message?: string } => {
     // 先检查当前对比状态（使用函数式更新来获取最新状态）
@@ -75,10 +78,10 @@ export function FileProvider({ children }: { children: ReactNode }) {
       
       // 如果要替换现有文件，检查对比状态
       if (existingComparison) {
-        // 检查是否正在对比中
-        if (existingComparison.comparisonStatus === "comparing") {
+        // 检查是否正在对比中或等待中
+        if (existingComparison.comparisonStatus === "comparing" || existingComparison.comparisonStatus === "waiting") {
           blockUpload = true;
-          blockMessage = `该文件正在对比中，无法替换。请等待对比完成后再上传。`;
+          blockMessage = `该文件正在对比中或等待对比，无法替换。请等待对比完成后再上传。`;
         }
       }
       
@@ -91,8 +94,8 @@ export function FileProvider({ children }: { children: ReactNode }) {
       const existing = prevComparisons.find((c) => c.id === file.city);
       if (existing) {
         // 更新现有的对比行
-        // 只有在对比状态不是 "comparing" 时才重置状态
-        const shouldResetStatus = existing.comparisonStatus !== "comparing";
+        // 只有在对比状态不是 "comparing" 或 "waiting" 时才重置状态
+        const shouldResetStatus = existing.comparisonStatus !== "comparing" && existing.comparisonStatus !== "waiting";
         return prevComparisons.map((c) =>
           c.id === file.city
             ? {
@@ -275,6 +278,22 @@ export function FileProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const isUploadingType = (type: "thisYear" | "lastYear") => {
+    return uploadingTypes.has(type);
+  };
+
+  const setUploadingType = (type: "thisYear" | "lastYear", uploading: boolean) => {
+    setUploadingTypes((prev) => {
+      const newSet = new Set(prev);
+      if (uploading) {
+        newSet.add(type);
+      } else {
+        newSet.delete(type);
+      }
+      return newSet;
+    });
+  };
+
   return (
     <FileContext.Provider
       value={{
@@ -287,6 +306,8 @@ export function FileProvider({ children }: { children: ReactNode }) {
         updateComparison,
         resetComparisons,
         removeComparison,
+        isUploadingType,
+        setUploadingType,
       }}
     >
       {children}

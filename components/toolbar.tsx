@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useFileContext } from "@/contexts/file-context";
 import { getCozeTokenClient } from "@/lib/coze-config";
 import { getCurrentUsername } from "@/lib/user";
@@ -13,7 +13,15 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
   const { comparisons, updateComparison } = useFileContext();
   const [isComparing, setIsComparing] = useState(false);
   const [filterStatus, setFilterStatus] = useState("全部状态");
-  const [compareProgress, setCompareProgress] = useState({ current: 0, total: 0 });
+  const [compareProgress, setCompareProgress] = useState({ current: 0, total: 0, waiting: 0 });
+  const isCancelledRef = useRef(false);
+  const comparisonsRef = useRef(comparisons);
+  const completedCountRef = useRef(0); // 使用 ref 跟踪完成数量
+  
+  // 保持 comparisonsRef 与 comparisons 同步
+  useEffect(() => {
+    comparisonsRef.current = comparisons;
+  }, [comparisons]);
 
   const handleFilterChange = (value: string) => {
     setFilterStatus(value);
@@ -22,15 +30,69 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
     }
   };
 
+  // 并发控制函数：限制同时执行的任务数
+  const limitConcurrency = async (
+    tasks: (() => Promise<void>)[],
+    limit: number = 5
+  ): Promise<void> => {
+    const executing: Promise<void>[] = [];
+
+    for (const task of tasks) {
+      // 检查是否已取消
+      if (isCancelledRef.current) {
+        break;
+      }
+
+      const promise = task().finally(() => {
+        // 任务完成后从执行队列中移除
+        const index = executing.indexOf(promise);
+        if (index > -1) {
+          executing.splice(index, 1);
+        }
+      });
+
+      executing.push(promise);
+
+      // 如果达到并发限制，等待至少一个任务完成
+      if (executing.length >= limit) {
+        try {
+          await Promise.race(executing);
+        } catch (error) {
+          // 处理错误，但不中断循环
+          // 错误会在任务内部处理，这里只记录日志
+          if (process.env.NODE_ENV === 'development') {
+            console.error("任务执行错误:", error);
+          }
+        }
+      }
+    }
+
+    // 等待所有剩余任务完成
+    await Promise.allSettled(executing);
+  };
+
+  const handleCancel = () => {
+    isCancelledRef.current = true;
+    // 将所有等待中的任务恢复为 none（使用最新的状态）
+    comparisonsRef.current.forEach((row) => {
+      if (row.comparisonStatus === "waiting") {
+        updateComparison(row.id, { comparisonStatus: "none" });
+      }
+    });
+    setIsComparing(false);
+    setCompareProgress({ current: 0, total: 0, waiting: 0 });
+  };
+
   const handleBatchCompare = async (type: "policy" | "commission") => {
-    // 筛选出可以对比的项（新年度和旧年度文件都齐全）
+    // 筛选出可以对比的项（新年度和旧年度文件都齐全，且不是正在对比中）
     const readyComparisons = comparisons.filter(
       (c) =>
         c.thisYearFile &&
         c.lastYearFile &&
         (c.thisYearFile.file_url || c.thisYearFile.url) &&
         (c.lastYearFile.file_url || c.lastYearFile.url) &&
-        c.comparisonStatus !== "comparing"
+        c.comparisonStatus !== "comparing" &&
+        c.comparisonStatus !== "waiting"
     );
 
     if (readyComparisons.length === 0) {
@@ -55,14 +117,85 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
       return;
     }
 
+    isCancelledRef.current = false;
     setIsComparing(true);
-    setCompareProgress({ current: 0, total: readyComparisons.length });
+    
+    // 创建一个 Set 来跟踪应该处理的任务 ID
+    const taskIds = new Set(readyComparisons.map(row => row.id));
+    
+    // 先设置所有任务为"等待中"
+    readyComparisons.forEach((row) => {
+      updateComparison(row.id, { comparisonStatus: "waiting" });
+    });
+
+    const totalCount = readyComparisons.length;
+
+    // 初始化进度
+    completedCountRef.current = 0;
+    setCompareProgress({
+      current: 0,
+      total: totalCount,
+      waiting: totalCount,
+    });
+
+    // 等待一个 tick，确保状态更新完成
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    // 使用函数式更新来避免竞态条件
+    const updateProgress = (incrementCurrent: number = 0, decrementWaiting: number = 0) => {
+      if (incrementCurrent > 0) {
+        completedCountRef.current += incrementCurrent;
+      }
+      setCompareProgress((prev) => ({
+        current: completedCountRef.current,
+        total: totalCount,
+        waiting: Math.max(0, prev.waiting - decrementWaiting),
+      }));
+    };
 
     try {
-      // 并发对比所有文件，但跟踪进度
-      let completedCount = 0;
-      const comparePromises = readyComparisons.map(async (row) => {
+      // 创建任务数组
+      const compareTasks = readyComparisons.map((row) => async () => {
+        // 检查是否已取消
+        if (isCancelledRef.current) {
+          return;
+        }
+
+        // 检查任务是否还在待处理列表中
+        if (!taskIds.has(row.id)) {
+          return;
+        }
+
+        // 检查当前状态，使用最新的 comparisonsRef 避免闭包问题
+        const currentRow = comparisonsRef.current.find((c) => c.id === row.id);
+        if (!currentRow) {
+          // 如果找不到，说明可能被删除了，从任务列表中移除
+          taskIds.delete(row.id);
+          return;
+        }
+        
+        // 如果状态是 comparing 或 done，说明已经在处理中或已完成，跳过
+        if (currentRow.comparisonStatus === "comparing" || currentRow.comparisonStatus === "done") {
+          taskIds.delete(row.id);
+          return;
+        }
+        
+        // 如果状态是 error，也跳过（避免重复处理失败的任务）
+        if (currentRow.comparisonStatus === "error") {
+          taskIds.delete(row.id);
+          return;
+        }
+        
+        // 如果状态是 none 或 waiting，都可以执行（none 可能是状态更新延迟导致的）
+        // 从任务列表中移除，避免重复处理
+        taskIds.delete(row.id);
+        
+        // 从当前状态变为对比中
         updateComparison(row.id, { comparisonStatus: "comparing" });
+
+        // 从等待中变为对比中
+        updateComparison(row.id, { comparisonStatus: "comparing" });
+        updateProgress(0, 1); // 减少等待中数量
 
         const oldFileUrl = row.lastYearFile!.file_url || row.lastYearFile!.url;
         const newFileUrl = row.thisYearFile!.file_url || row.thisYearFile!.url;
@@ -74,8 +207,7 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
             comparisonStatus: "error",
             comparisonError: "文件名称信息缺失",
           });
-          completedCount++;
-          setCompareProgress({ current: completedCount, total: readyComparisons.length });
+          updateProgress(1, 0); // 增加完成数量
           return;
         }
 
@@ -166,26 +298,39 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
             comparisonError: error.message || "对比失败",
             comparisonResult: undefined,
           });
+        } finally {
+          // 无论成功还是失败，都要更新进度
+          updateProgress(1, 0); // 增加完成数量
         }
-        
-        // 更新进度
-        completedCount++;
-        setCompareProgress({ current: completedCount, total: readyComparisons.length });
       });
 
-      await Promise.all(comparePromises);
+      // 使用并发控制执行任务
+      await limitConcurrency(compareTasks, 5);
+
+      // 如果被取消，恢复所有等待中的任务（使用最新的状态）
+      if (isCancelledRef.current) {
+        comparisonsRef.current.forEach((row) => {
+          if (row.comparisonStatus === "waiting") {
+            updateComparison(row.id, { comparisonStatus: "none" });
+          }
+        });
+      }
+
       // 使用 toast 提示
-      const toast = document.createElement("div");
-      toast.className = "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-emerald-500 text-white px-6 py-4 rounded-lg shadow-xl text-sm";
-      toast.textContent = `已完成 ${readyComparisons.length} 个文件的对比`;
-      toast.style.opacity = "0";
-      toast.style.transition = "opacity 0.3s";
-      document.body.appendChild(toast);
-      setTimeout(() => { toast.style.opacity = "1"; }, 10);
-      setTimeout(() => {
+      if (!isCancelledRef.current) {
+        const finalCompletedCount = completedCountRef.current;
+        const toast = document.createElement("div");
+        toast.className = "fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[10000] bg-emerald-500 text-white px-6 py-4 rounded-lg shadow-xl text-sm";
+        toast.textContent = `已完成 ${finalCompletedCount} 个文件的对比`;
         toast.style.opacity = "0";
-        setTimeout(() => toast.remove(), 300);
-      }, 2700);
+        toast.style.transition = "opacity 0.3s";
+        document.body.appendChild(toast);
+        setTimeout(() => { toast.style.opacity = "1"; }, 10);
+        setTimeout(() => {
+          toast.style.opacity = "0";
+          setTimeout(() => toast.remove(), 300);
+        }, 2700);
+      }
     } catch (error) {
       if (process.env.NODE_ENV === 'development') {
         console.error("批量对比错误:", error);
@@ -204,7 +349,8 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
       }, 2700);
     } finally {
       setIsComparing(false);
-      setCompareProgress({ current: 0, total: 0 }); // 重置进度
+      isCancelledRef.current = false;
+      setCompareProgress({ current: 0, total: 0, waiting: 0 }); // 重置进度
     }
   };
 
@@ -232,19 +378,42 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => handleBatchCompare("policy")}
-            disabled={isComparing || comparisons.filter(
-              (c) =>
-                c.thisYearFile &&
-                c.lastYearFile &&
-                (c.thisYearFile.file_url || c.thisYearFile.url) &&
-                (c.lastYearFile.file_url || c.lastYearFile.url)
-            ).length === 0}
-            className="rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isComparing ? `对比中 ${compareProgress.current}/${compareProgress.total}` : "政策一键对比"}
-          </button>
+          {isComparing ? (
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleCancel}
+                  className="rounded-xl bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 transition-colors"
+                >
+                  取消{compareProgress.waiting > 0 && ` (等待中: ${compareProgress.waiting})`}
+                </button>
+                <span className="text-sm text-slate-600">
+                  对比中 {compareProgress.current}/{compareProgress.total} {compareProgress.waiting > 0 && `(等待中: ${compareProgress.waiting})`}
+                </span>
+              </div>
+              <span className="text-xs text-slate-500 px-1">
+                只能取消等待中的任务，已经开始的任务无法取消
+              </span>
+            </div>
+          ) : (
+            <>
+              <button
+                onClick={() => handleBatchCompare("policy")}
+                disabled={comparisons.filter(
+                  (c) =>
+                    c.thisYearFile &&
+                    c.lastYearFile &&
+                    (c.thisYearFile.file_url || c.thisYearFile.url) &&
+                    (c.lastYearFile.file_url || c.lastYearFile.url) &&
+                    c.comparisonStatus !== "comparing" &&
+                    c.comparisonStatus !== "waiting"
+                ).length === 0}
+                className="rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                政策一键对比
+              </button>
+            </>
+          )}
           <button
             onClick={() => {
               // 显示toast提示
