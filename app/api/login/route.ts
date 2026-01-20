@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 const USERS: Record<string, string> = {
   admin: "admin6688",
   test: "123456",
+  13795272627: "5272627",
 };
 
 export async function POST(request: NextRequest) {
