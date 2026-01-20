@@ -48,6 +48,70 @@ function getDatabase() {
       const dbGetTime = Date.now() - dbGetStartTime;
       console.log(`[getDatabase] database() 获取完成，耗时: ${dbGetTime}ms`);
       
+      // 添加连接测试（异步执行，不阻塞返回）
+      (async () => {
+        console.log("[getDatabase] ========== 开始测试数据库连接 ==========");
+        const testStartTime = Date.now();
+        try {
+          // 执行一个简单的查询测试连接
+          const testQuery = databaseInstance!.collection(COLLECTION_NAME).limit(1);
+          console.log("[getDatabase] 📤 发送测试查询请求...");
+          
+          const testResult: any = await Promise.race([
+            testQuery.get(),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('连接测试超时（5秒）')), 5000)
+            )
+          ]);
+          
+          const testTime = Date.now() - testStartTime;
+          console.log(`[getDatabase] 📥 测试查询响应（原始数据）:`, JSON.stringify(testResult, null, 2));
+          console.log(`[getDatabase] ✅ 数据库连接测试成功，耗时: ${testTime}ms`);
+          console.log(`[getDatabase] 测试查询结果:`, {
+            hasData: !!testResult.data,
+            dataLength: testResult.data?.length || 0,
+            hasCode: typeof testResult.code === 'string',
+            code: testResult.code,
+          });
+          
+          // 检查返回结果是否有错误码
+          if (typeof testResult.code === 'string') {
+            console.warn(`[getDatabase] ⚠️ 测试查询返回错误码:`, {
+              code: testResult.code,
+              message: testResult.message,
+            });
+          }
+        } catch (testError: any) {
+          const testTime = Date.now() - testStartTime;
+          console.error(`[getDatabase] ❌ 数据库连接测试失败，耗时: ${testTime}ms`);
+          console.error(`[getDatabase] 测试错误详情:`, {
+            error: testError.message,
+            code: testError.code,
+            errno: testError.errno,
+            syscall: testError.syscall,
+            address: testError.address,
+            port: testError.port,
+            stack: testError.stack,
+            name: testError.name,
+            errorString: String(testError),
+          });
+          
+          // 根据错误类型给出诊断建议
+          if (testError.code === 'ETIMEDOUT') {
+            console.error(`[getDatabase] 💡 诊断建议: 网络超时，可能是网络延迟过高或腾讯云服务不可达`);
+          } else if (testError.code === 'ECONNREFUSED') {
+            console.error(`[getDatabase] 💡 诊断建议: 连接被拒绝，可能是IP白名单限制或服务未启动`);
+          } else if (testError.code === 'ENOTFOUND') {
+            console.error(`[getDatabase] 💡 诊断建议: DNS解析失败，检查网络连接和DNS设置`);
+          } else if (testError.code === 'EHOSTUNREACH') {
+            console.error(`[getDatabase] 💡 诊断建议: 主机不可达，可能是网络路由问题`);
+          }
+          
+          // 不抛出错误，只记录警告，让后续操作继续
+          console.warn(`[getDatabase] ⚠️ 连接测试失败，但继续初始化（后续操作可能会失败）`);
+        }
+      })();
+      
       const totalInitTime = Date.now() - initStartTime;
       console.log(`[getDatabase] ✅ 数据库连接初始化完成，总耗时: ${totalInitTime}ms`);
     } catch (error: any) {
@@ -55,6 +119,12 @@ function getDatabase() {
         error: error.message,
         stack: error.stack,
         name: error.name,
+        code: error.code,
+        errno: error.errno,
+        syscall: error.syscall,
+        address: error.address,
+        port: error.port,
+        errorString: String(error),
       });
       throw error;
     }
