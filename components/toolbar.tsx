@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useFileContext } from "@/contexts/file-context";
 import { getCozeTokenClient } from "@/lib/coze-config";
+import { getCurrentUsername } from "@/lib/user";
 
 interface ToolbarProps {
   onFilterChange?: (filter: string) => void;
@@ -126,6 +127,13 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
             // 保存扣子API的完整原始返回数据（从API返回的rawCozeResponse字段获取）
             const rawCozeData = data.rawCozeResponse || data;
             
+            // 获取用户名
+            const username = getCurrentUsername();
+            if (!username) {
+              console.error("保存对比结果失败：未登录");
+              return;
+            }
+            
             const saveResponse = await fetch("/api/policy-compare-records", {
               method: "POST",
               headers: {
@@ -140,6 +148,7 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
                 status: "done",
                 // 保存扣子API的原始返回数据（不解析，保持原始格式）
                 rawCozeResponse: rawCozeData,
+                username: username, // 添加用户名参数
               }),
             });
 
