@@ -5,257 +5,66 @@ import tcb from "@cloudbase/node-sdk";
 const ENV_ID = process.env.TCB_ENV_ID || "pet-8g5ohyrp269f409e-9bua741dcc7";
 const COLLECTION_NAME = "policy_compare_records";
 
-// 初始化腾讯云SDK（单例模式，复用连接）
+// 初始化腾讯云SDK（每次重新初始化，适配 Serverless 环境）
 // 参考文档：https://docs.cloudbase.net/api-reference/server/node-sdk/initialization
-let dbInstance: ReturnType<typeof tcb.init> | null = null;
-let databaseInstance: ReturnType<ReturnType<typeof tcb.init>["database"]> | null = null;
-
+// 注意：在 Serverless 环境中，每次请求都重新初始化连接更可靠
 function getDatabase() {
   const initStartTime = Date.now();
   
-  if (!dbInstance) {
-    console.log("[getDatabase] 初始化新的数据库连接实例...");
-    
-    // 添加网络环境诊断
-    console.log("[getDatabase] ========== 网络环境诊断 ==========");
-    console.log("[getDatabase] 系统环境信息:", {
-      nodeVersion: process.version,
-      platform: process.platform,
-      arch: process.arch,
-      env: process.env.NODE_ENV,
-      pid: process.pid,
-      uptime: process.uptime(),
-    });
-    
-    console.log("[getDatabase] 网络配置信息:", {
-      httpProxy: process.env.HTTP_PROXY || process.env.http_proxy || "未设置",
-      httpsProxy: process.env.HTTPS_PROXY || process.env.https_proxy || "未设置",
-      noProxy: process.env.NO_PROXY || process.env.no_proxy || "未设置",
-      dnsServers: process.env.DNS_SERVERS || "未设置",
-    });
-    
-    const secretId = process.env.TCB_SECRET_ID;
-    const secretKey = process.env.TCB_SECRET_KEY;
-    
-    console.log("[getDatabase] 环境变量原始数据:", {
-      TCB_ENV_ID: ENV_ID,
-      TCB_SECRET_ID: secretId,
-      TCB_SECRET_KEY: secretKey,
-    });
-    
-    if (!secretId || !secretKey) {
-      console.error("[getDatabase] ❌ 缺少必要的环境变量");
-      throw new Error("TCB_SECRET_ID and TCB_SECRET_KEY must be set in environment variables");
-    }
-    
-    try {
-      console.log("[getDatabase] 开始调用 tcb.init()...");
-      const tcbInitStartTime = Date.now();
-      
-      dbInstance = tcb.init({
-        env: ENV_ID,
-        secretId: secretId,
-        secretKey: secretKey,
-      });
-      
-      const tcbInitTime = Date.now() - tcbInitStartTime;
-      console.log(`[getDatabase] tcb.init() 完成，耗时: ${tcbInitTime}ms`);
-      
-      console.log("[getDatabase] 开始获取 database() 实例...");
-      const dbGetStartTime = Date.now();
-      databaseInstance = dbInstance.database();
-      const dbGetTime = Date.now() - dbGetStartTime;
-      console.log(`[getDatabase] database() 获取完成，耗时: ${dbGetTime}ms`);
-      
-      // 添加连接测试（异步执行，不阻塞返回）
-      (async () => {
-        console.log("[getDatabase] ========== 开始测试数据库连接 ==========");
-        const testStartTime = Date.now();
-        try {
-          // 执行一个简单的查询测试连接
-          const testQuery = databaseInstance!.collection(COLLECTION_NAME).limit(1);
-          console.log("[getDatabase] 📤 发送测试查询请求...");
-          console.log("[getDatabase] 测试查询参数:", {
-            collection: COLLECTION_NAME,
-            limit: 1,
-          });
-          
-          // 创建查询 Promise，并添加详细的错误捕获
-          const queryPromise = testQuery.get().catch((err: any) => {
-            // 捕获 SDK 内部的错误
-            console.error(`[getDatabase] 🔴 SDK 查询内部错误捕获:`, {
-              error: err.message,
-              code: err.code,
-              errno: err.errno,
-              syscall: err.syscall,
-              address: err.address,
-              port: err.port,
-              stack: err.stack,
-              name: err.name,
-              // 尝试获取 SDK 内部的错误信息
-              response: err.response ? {
-                status: err.response.status,
-                statusText: err.response.statusText,
-                data: err.response.data,
-                headers: err.response.headers,
-              } : undefined,
-              request: err.request ? {
-                method: err.request.method,
-                url: err.request.url,
-                headers: err.request.headers,
-              } : undefined,
-              config: err.config ? {
-                url: err.config.url,
-                method: err.config.method,
-                timeout: err.config.timeout,
-                headers: err.config.headers,
-              } : undefined,
-              // 尝试获取所有可枚举的属性
-              allProperties: Object.keys(err).reduce((acc: any, key) => {
-                try {
-                  acc[key] = err[key];
-                } catch (e) {
-                  acc[key] = '[无法访问]';
-                }
-                return acc;
-              }, {}),
-            });
-            throw err;
-          });
-          
-          const testResult: any = await Promise.race([
-            queryPromise,
-            new Promise((_, reject) => 
-              setTimeout(() => reject(new Error('连接测试超时（5秒）')), 5000)
-            )
-          ]);
-          
-          const testTime = Date.now() - testStartTime;
-          console.log(`[getDatabase] 📥 测试查询响应（原始数据）:`, JSON.stringify(testResult, null, 2));
-          console.log(`[getDatabase] ✅ 数据库连接测试成功，耗时: ${testTime}ms`);
-          console.log(`[getDatabase] 测试查询结果:`, {
-            hasData: !!testResult.data,
-            dataLength: testResult.data?.length || 0,
-            hasCode: typeof testResult.code === 'string',
-            code: testResult.code,
-          });
-          
-          // 检查返回结果是否有错误码
-          if (typeof testResult.code === 'string') {
-            console.warn(`[getDatabase] ⚠️ 测试查询返回错误码:`, {
-              code: testResult.code,
-              message: testResult.message,
-              fullResult: testResult,
-            });
-          }
-        } catch (testError: any) {
-          const testTime = Date.now() - testStartTime;
-          console.error(`[getDatabase] ❌ 数据库连接测试失败，耗时: ${testTime}ms`);
-          
-          // 收集所有可能的错误信息
-          const errorDetails: any = {
-            error: testError.message,
-            code: testError.code,
-            errno: testError.errno,
-            syscall: testError.syscall,
-            address: testError.address,
-            port: testError.port,
-            stack: testError.stack,
-            name: testError.name,
-            errorString: String(testError),
-          };
-          
-          // 尝试获取更多错误信息
-          try {
-            if (testError.response) {
-              errorDetails.response = {
-                status: testError.response.status,
-                statusText: testError.response.statusText,
-                data: testError.response.data,
-                headers: testError.response.headers,
-              };
-            }
-          } catch (e) {
-            // 忽略
-          }
-          
-          try {
-            if (testError.request) {
-              errorDetails.request = {
-                method: testError.request.method,
-                url: testError.request.url,
-                headers: testError.request.headers,
-              };
-            }
-          } catch (e) {
-            // 忽略
-          }
-          
-          // 尝试获取所有可枚举的属性
-          try {
-            const allProps: any = {};
-            for (const key in testError) {
-              try {
-                allProps[key] = testError[key];
-              } catch (e) {
-                allProps[key] = '[无法访问]';
-              }
-            }
-            errorDetails.allProperties = allProps;
-          } catch (e) {
-            // 忽略
-          }
-          
-          console.error(`[getDatabase] 测试错误详情（完整）:`, JSON.stringify(errorDetails, null, 2));
-          
-          // 根据错误类型给出诊断建议
-          if (testError.code === 'ETIMEDOUT') {
-            console.error(`[getDatabase] 💡 诊断建议: 网络超时，可能是网络延迟过高或腾讯云服务不可达`);
-            console.error(`[getDatabase] 💡 检查项: 1) 腾讯云开发控制台的安全设置（IP白名单） 2) 网络连接状态 3) 服务是否正常运行`);
-          } else if (testError.code === 'ECONNREFUSED') {
-            console.error(`[getDatabase] 💡 诊断建议: 连接被拒绝，可能是IP白名单限制或服务未启动`);
-            console.error(`[getDatabase] 💡 检查项: 1) 腾讯云开发控制台的IP白名单设置 2) 确认服务是否启动`);
-          } else if (testError.code === 'ENOTFOUND') {
-            console.error(`[getDatabase] 💡 诊断建议: DNS解析失败，检查网络连接和DNS设置`);
-            console.error(`[getDatabase] 💡 检查项: 1) DNS服务器配置 2) 网络连接状态 3) 域名解析是否正常`);
-          } else if (testError.code === 'EHOSTUNREACH') {
-            console.error(`[getDatabase] 💡 诊断建议: 主机不可达，可能是网络路由问题`);
-            console.error(`[getDatabase] 💡 检查项: 1) 网络路由配置 2) 防火墙设置 3) 服务地址是否正确`);
-          } else if (testError.message?.includes('超时')) {
-            console.error(`[getDatabase] 💡 诊断建议: 查询超时，可能是网络延迟过高或查询性能问题`);
-            console.error(`[getDatabase] 💡 检查项: 1) 腾讯云开发控制台的安全设置 2) 网络延迟 3) 数据库索引是否建立 4) 查询条件是否优化`);
-            console.error(`[getDatabase] 💡 可能原因: 1) Zeabur平台到腾讯云的网络延迟 2) IP白名单限制 3) 查询数据量过大`);
-          } else {
-            console.error(`[getDatabase] 💡 诊断建议: 未知错误类型，请检查完整错误信息`);
-            console.error(`[getDatabase] 💡 检查项: 1) 腾讯云开发控制台的所有安全设置 2) 网络连接状态 3) SDK版本和配置`);
-          }
-          
-          // 不抛出错误，只记录警告，让后续操作继续
-          console.warn(`[getDatabase] ⚠️ 连接测试失败，但继续初始化（后续操作可能会失败）`);
-        }
-      })();
-      
-      const totalInitTime = Date.now() - initStartTime;
-      console.log(`[getDatabase] ✅ 数据库连接初始化完成，总耗时: ${totalInitTime}ms`);
-    } catch (error: any) {
-      console.error("[getDatabase] ❌ 数据库初始化失败:", {
-        error: error.message,
-        stack: error.stack,
-        name: error.name,
-        code: error.code,
-        errno: error.errno,
-        syscall: error.syscall,
-        address: error.address,
-        port: error.port,
-        errorString: String(error),
-      });
-      throw error;
-    }
-  } else {
-    console.log("[getDatabase] 复用现有数据库连接实例");
+  console.log("[getDatabase] 初始化数据库连接实例...");
+  
+  const secretId = process.env.TCB_SECRET_ID;
+  const secretKey = process.env.TCB_SECRET_KEY;
+  
+  console.log("[getDatabase] 环境变量检查:", {
+    TCB_ENV_ID: ENV_ID,
+    hasSecretId: !!secretId,
+    hasSecretKey: !!secretKey,
+  });
+  
+  if (!secretId || !secretKey) {
+    console.error("[getDatabase] ❌ 缺少必要的环境变量");
+    throw new Error("TCB_SECRET_ID and TCB_SECRET_KEY must be set in environment variables");
   }
   
-  return databaseInstance!;
+  try {
+    console.log("[getDatabase] 开始调用 tcb.init()...");
+    const tcbInitStartTime = Date.now();
+    
+    // 每次都创建新实例（参考正常项目的做法）
+    const dbInstance = tcb.init({
+      env: ENV_ID,
+      secretId: secretId,
+      secretKey: secretKey,
+    });
+    
+    const tcbInitTime = Date.now() - tcbInitStartTime;
+    console.log(`[getDatabase] tcb.init() 完成，耗时: ${tcbInitTime}ms`);
+    
+    console.log("[getDatabase] 开始获取 database() 实例...");
+    const dbGetStartTime = Date.now();
+    const databaseInstance = dbInstance.database();
+    const dbGetTime = Date.now() - dbGetStartTime;
+    console.log(`[getDatabase] database() 获取完成，耗时: ${dbGetTime}ms`);
+    
+    const totalInitTime = Date.now() - initStartTime;
+    console.log(`[getDatabase] ✅ 数据库连接初始化完成，总耗时: ${totalInitTime}ms`);
+    
+    return databaseInstance;
+  } catch (error: any) {
+    console.error("[getDatabase] ❌ 数据库初始化失败:", {
+      error: error.message,
+      stack: error.stack,
+      name: error.name,
+      code: error.code,
+      errno: error.errno,
+      syscall: error.syscall,
+      address: error.address,
+      port: error.port,
+      errorString: String(error),
+    });
+    throw error;
+  }
 }
 
 // POST: 创建对比记录
