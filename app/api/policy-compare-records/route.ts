@@ -11,28 +11,81 @@ let dbInstance: ReturnType<typeof tcb.init> | null = null;
 let databaseInstance: ReturnType<ReturnType<typeof tcb.init>["database"]> | null = null;
 
 function getDatabase() {
+  const initStartTime = Date.now();
+  
   if (!dbInstance) {
+    console.log("[getDatabase] 初始化新的数据库连接实例...");
+    console.log("[getDatabase] 环境变量检查:", {
+      hasSecretId: !!process.env.TCB_SECRET_ID,
+      hasSecretKey: !!process.env.TCB_SECRET_KEY,
+      envId: ENV_ID,
+      secretIdLength: process.env.TCB_SECRET_ID?.length || 0,
+      secretKeyLength: process.env.TCB_SECRET_KEY?.length || 0,
+    });
+    
     const secretId = process.env.TCB_SECRET_ID;
     const secretKey = process.env.TCB_SECRET_KEY;
     
     if (!secretId || !secretKey) {
+      console.error("[getDatabase] ❌ 缺少必要的环境变量");
       throw new Error("TCB_SECRET_ID and TCB_SECRET_KEY must be set in environment variables");
     }
     
-    dbInstance = tcb.init({
-      env: ENV_ID,
-      secretId: secretId,
-      secretKey: secretKey,
-    });
-    databaseInstance = dbInstance.database();
+    try {
+      console.log("[getDatabase] 开始调用 tcb.init()...");
+      const tcbInitStartTime = Date.now();
+      
+      dbInstance = tcb.init({
+        env: ENV_ID,
+        secretId: secretId,
+        secretKey: secretKey,
+      });
+      
+      const tcbInitTime = Date.now() - tcbInitStartTime;
+      console.log(`[getDatabase] tcb.init() 完成，耗时: ${tcbInitTime}ms`);
+      
+      console.log("[getDatabase] 开始获取 database() 实例...");
+      const dbGetStartTime = Date.now();
+      databaseInstance = dbInstance.database();
+      const dbGetTime = Date.now() - dbGetStartTime;
+      console.log(`[getDatabase] database() 获取完成，耗时: ${dbGetTime}ms`);
+      
+      const totalInitTime = Date.now() - initStartTime;
+      console.log(`[getDatabase] ✅ 数据库连接初始化完成，总耗时: ${totalInitTime}ms`);
+    } catch (error: any) {
+      console.error("[getDatabase] ❌ 数据库初始化失败:", {
+        error: error.message,
+        stack: error.stack,
+        name: error.name,
+      });
+      throw error;
+    }
+  } else {
+    console.log("[getDatabase] 复用现有数据库连接实例");
   }
+  
   return databaseInstance!;
 }
 
 // POST: 创建对比记录
 export async function POST(request: NextRequest) {
+  const requestStartTime = Date.now();
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
   try {
+    console.log(`[POST ${requestId}] ========== 开始处理请求 ==========`);
+    console.log(`[POST ${requestId}] 请求时间: ${new Date().toISOString()}`);
+    
     const body = await request.json();
+    console.log(`[POST ${requestId}] 请求体参数:`, {
+      company: body.company,
+      oldFileName: body.oldFileName,
+      newFileName: body.newFileName,
+      hasOldFileUrl: !!body.oldFileUrl,
+      hasNewFileUrl: !!body.newFileUrl,
+      username: body.username,
+      status: body.status,
+    });
     const {
       company,
       oldFileName,
@@ -58,7 +111,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.log(`[POST ${requestId}] 开始初始化数据库连接...`);
+    const dbInitStartTime = Date.now();
     const db = getDatabase();
+    const dbInitTime = Date.now() - dbInitStartTime;
+    console.log(`[POST ${requestId}] 数据库连接初始化完成，耗时: ${dbInitTime}ms`);
 
     // 获取北京时间（UTC+8）
     const getBeijingTime = () => {
@@ -83,12 +140,31 @@ export async function POST(request: NextRequest) {
       updateTime: new Date().toISOString(),
     };
 
+    console.log(`[POST ${requestId}] 准备插入记录到集合: ${COLLECTION_NAME}`);
+    console.log(`[POST ${requestId}] 记录数据:`, {
+      company,
+      oldFileName,
+      newFileName,
+      username,
+      hasRawCozeResponse: !!rawCozeResponse,
+      rawCozeResponseLength: rawCozeResponse ? JSON.stringify(rawCozeResponse).length : 0,
+    });
+
     // 使用SDK插入记录
+    console.log(`[POST ${requestId}] 开始执行数据库插入操作...`);
+    const insertStartTime = Date.now();
     const result: any = await db.collection(COLLECTION_NAME).add(record);
+    const insertTime = Date.now() - insertStartTime;
+    console.log(`[POST ${requestId}] 数据库插入完成，耗时: ${insertTime}ms`);
 
     // 检查是否有错误（根据文档，应该检查 typeof result.code === 'string'）
     if (typeof result.code === 'string') {
-      console.error("创建记录失败:", result);
+      const totalTime = Date.now() - requestStartTime;
+      console.error(`[POST ${requestId}] ❌ 创建记录失败，总耗时: ${totalTime}ms`, {
+        code: result.code,
+        message: result.message,
+        result,
+      });
       return NextResponse.json(
         {
           success: false,
@@ -104,7 +180,10 @@ export async function POST(request: NextRequest) {
     const _id = result.id || result._id || result.ids?.[0];
     
     if (!_id) {
-      console.error("创建记录成功但未返回ID:", result);
+      const totalTime = Date.now() - requestStartTime;
+      console.error(`[POST ${requestId}] ❌ 创建记录成功但未返回ID，总耗时: ${totalTime}ms`, {
+        result,
+      });
       return NextResponse.json(
         {
           success: false,
@@ -114,13 +193,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const totalTime = Date.now() - requestStartTime;
+    console.log(`[POST ${requestId}] ✅ 创建记录成功，总耗时: ${totalTime}ms`, {
+      _id,
+      performance: {
+        dbInit: dbInitTime,
+        insert: insertTime,
+        total: totalTime,
+      },
+    });
+
     return NextResponse.json({
       success: true,
       data: result,
       _id: _id, // 直接返回数据库的_id
     });
   } catch (error: any) {
-    console.error("创建对比记录错误:", error);
+    const totalTime = Date.now() - requestStartTime;
+    console.error(`[POST ${requestId}] ❌ 创建对比记录错误，总耗时: ${totalTime}ms`, {
+      error: error.message,
+      stack: error.stack,
+      name: error.name,
+      errorString: String(error),
+    });
     return NextResponse.json(
       {
         success: false,
@@ -492,18 +587,39 @@ export async function PATCH(request: NextRequest) {
 
 // GET: 分页查询历史记录
 export async function GET(request: NextRequest) {
+  const requestStartTime = Date.now();
+  const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
   try {
+    console.log(`[GET ${requestId}] ========== 开始处理请求 ==========`);
+    console.log(`[GET ${requestId}] 请求时间: ${new Date().toISOString()}`);
+    
     const { searchParams } = new URL(request.url);
     const recordId = searchParams.get("id");
     const page = parseInt(searchParams.get("page") || "1");
     const pageSize = parseInt(searchParams.get("pageSize") || "100");
     const skip = (page - 1) * pageSize;
+    const username = searchParams.get("username");
+    const getAll = searchParams.get("all") === "true";
 
+    console.log(`[GET ${requestId}] 请求参数:`, {
+      recordId,
+      page,
+      pageSize,
+      skip,
+      username,
+      getAll,
+      url: request.url,
+    });
+
+    console.log(`[GET ${requestId}] 开始初始化数据库连接...`);
+    const dbInitStartTime = Date.now();
     const db = getDatabase();
-
-    const username = searchParams.get("username"); // 用户名
+    const dbInitTime = Date.now() - dbInitStartTime;
+    console.log(`[GET ${requestId}] 数据库连接初始化完成，耗时: ${dbInitTime}ms`);
 
     if (!username) {
+      console.error(`[GET ${requestId}] ❌ 缺少用户名参数`);
       return NextResponse.json(
         { success: false, message: "缺少用户名参数" },
         { status: 400 }
@@ -512,12 +628,22 @@ export async function GET(request: NextRequest) {
 
     if (recordId) {
       // 查询单个记录（通过数据库的_id）
+      console.log(`[GET ${requestId}] 查询单个记录，recordId: ${recordId}`);
+      const singleQueryStartTime = Date.now();
+      
       const result: any = await db
         .collection(COLLECTION_NAME)
         .doc(recordId) // recordId就是数据库的_id
         .get();
 
+      const singleQueryTime = Date.now() - singleQueryStartTime;
+      console.log(`[GET ${requestId}] 单个记录查询完成，耗时: ${singleQueryTime}ms`);
+
       if (typeof result.code === 'string') {
+        console.error(`[GET ${requestId}] ❌ 查询失败:`, {
+          code: result.code,
+          message: result.message,
+        });
         return NextResponse.json(
           {
             success: false,
@@ -529,6 +655,7 @@ export async function GET(request: NextRequest) {
       }
 
       if (!result.data || result.data.length === 0) {
+        console.warn(`[GET ${requestId}] ⚠️ 记录不存在，recordId: ${recordId}`);
         return NextResponse.json(
           {
             success: false,
@@ -539,8 +666,15 @@ export async function GET(request: NextRequest) {
       }
 
       const record = result.data[0];
+      console.log(`[GET ${requestId}] 查询到记录:`, {
+        recordId: record._id,
+        recordUsername: record.username,
+        requestUsername: username,
+      });
+
       // 验证记录是否属于当前用户
       if (record.username !== username) {
+        console.error(`[GET ${requestId}] ❌ 无权访问此记录`);
         return NextResponse.json(
           {
             success: false,
@@ -550,15 +684,25 @@ export async function GET(request: NextRequest) {
         );
       }
 
+      const totalTime = Date.now() - requestStartTime;
+      console.log(`[GET ${requestId}] ✅ 单个记录查询成功，总耗时: ${totalTime}ms`);
+      
       return NextResponse.json({
         success: true,
         data: record,
       });
     } else {
-      // 检查是否要获取所有记录（用于导出）
-      const getAll = searchParams.get("all") === "true";
+      // 列表查询（分页或全部）
+      console.log(`[GET ${requestId}] 开始列表查询，模式: ${getAll ? '全部导出' : '分页查询'}`);
       
       // 分页查询所有记录（只查询status为done且属于当前用户的记录）
+      console.log(`[GET ${requestId}] 构建查询条件:`, {
+        collection: COLLECTION_NAME,
+        where: { status: "done", username },
+        orderBy: "createTime",
+        order: "desc",
+      });
+      
       let query = db
         .collection(COLLECTION_NAME)
         .where({
@@ -572,14 +716,25 @@ export async function GET(request: NextRequest) {
         // 如果数据量超过1000条，建议分批导出或使用其他方式
         const MAX_EXPORT_LIMIT = 1000;
         query = query.limit(MAX_EXPORT_LIMIT);
+        console.log(`[GET ${requestId}] 导出全部模式，限制: ${MAX_EXPORT_LIMIT}条`);
       } else {
         // 正常分页查询
         query = query.skip(skip).limit(pageSize);
+        console.log(`[GET ${requestId}] 分页查询，skip: ${skip}, limit: ${pageSize}`);
       }
 
+      console.log(`[GET ${requestId}] 开始执行数据查询...`);
+      const dataQueryStartTime = Date.now();
       const result: any = await query.get();
+      const dataQueryTime = Date.now() - dataQueryStartTime;
+      console.log(`[GET ${requestId}] 数据查询完成，耗时: ${dataQueryTime}ms`);
 
       if (typeof result.code === 'string') {
+        console.error(`[GET ${requestId}] ❌ 数据查询失败:`, {
+          code: result.code,
+          message: result.message,
+          queryTime: dataQueryTime,
+        });
         return NextResponse.json(
           {
             success: false,
@@ -590,11 +745,20 @@ export async function GET(request: NextRequest) {
         );
       }
 
+      const dataCount = result.data ? result.data.length : 0;
+      console.log(`[GET ${requestId}] 查询到 ${dataCount} 条记录`);
+
       // 如果获取全部，直接返回数据，不需要分页信息
       if (getAll) {
-        const returnedCount = result.data ? result.data.length : 0;
+        const returnedCount = dataCount;
         // 如果返回的数据量等于限制，可能还有更多数据
         const hasMore = returnedCount >= 1000;
+        
+        const totalTime = Date.now() - requestStartTime;
+        console.log(`[GET ${requestId}] ✅ 全部导出完成，总耗时: ${totalTime}ms`, {
+          returnedCount,
+          hasMore,
+        });
         
         return NextResponse.json({
           success: true,
@@ -607,6 +771,9 @@ export async function GET(request: NextRequest) {
 
       // 查询总数（先查询所有记录，然后计算总数）
       // 注意：Node.js SDK可能没有count方法，所以先查询所有记录
+      console.log(`[GET ${requestId}] 开始查询总数...`);
+      const countQueryStartTime = Date.now();
+      
       const countQuery = db
         .collection(COLLECTION_NAME)
         .where({
@@ -616,17 +783,40 @@ export async function GET(request: NextRequest) {
       
       // 获取总数（通过查询所有记录，但只取第一个字段来获取总数）
       // 由于SDK限制，我们使用一个技巧：查询所有记录但只获取_id字段
+      console.log(`[GET ${requestId}] 执行总数查询（仅查询_id字段）...`);
       const allRecords: any = await countQuery.field({ _id: true }).get();
+      const countQueryTime = Date.now() - countQueryStartTime;
+      console.log(`[GET ${requestId}] 总数查询完成，耗时: ${countQueryTime}ms`);
       
       let total = 0;
       if (typeof allRecords.code === 'string') {
         // 如果查询失败，使用当前页的数据量估算
-        total = result.data ? result.data.length : 0;
+        console.warn(`[GET ${requestId}] ⚠️ 总数查询失败，使用当前页数据量估算:`, {
+          code: allRecords.code,
+          message: allRecords.message,
+        });
+        total = dataCount;
       } else {
         total = allRecords.data ? allRecords.data.length : 0;
+        console.log(`[GET ${requestId}] 查询到总数: ${total} 条记录`);
       }
       
       const totalPages = Math.ceil(total / pageSize);
+      const totalTime = Date.now() - requestStartTime;
+
+      console.log(`[GET ${requestId}] ✅ 分页查询成功，总耗时: ${totalTime}ms`, {
+        page,
+        pageSize,
+        total,
+        totalPages,
+        dataCount,
+        performance: {
+          dbInit: dbInitTime,
+          dataQuery: dataQueryTime,
+          countQuery: countQueryTime,
+          total: totalTime,
+        },
+      });
 
       return NextResponse.json({
         success: true,
@@ -642,7 +832,13 @@ export async function GET(request: NextRequest) {
       });
     }
   } catch (error: any) {
-    console.error("查询对比记录错误:", error);
+    const totalTime = Date.now() - requestStartTime;
+    console.error(`[GET ${requestId}] ❌ 查询对比记录错误，总耗时: ${totalTime}ms`, {
+      error: error.message,
+      stack: error.stack,
+      name: error.name,
+      errorString: String(error),
+    });
     return NextResponse.json(
       {
         success: false,
