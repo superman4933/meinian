@@ -378,6 +378,7 @@ export async function GET(request: NextRequest) {
     const skip = (page - 1) * pageSize;
     const username = searchParams.get("username");
     const getAll = searchParams.get("all") === "true";
+    const keyword = searchParams.get("keyword"); // 搜索关键词
 
     if (!username) {
       return NextResponse.json(
@@ -387,6 +388,7 @@ export async function GET(request: NextRequest) {
     }
 
     const db = getDatabase();
+    const dbCommand = db.command;
 
     if (recordId) {
       // 查询单个记录（通过数据库的_id）
@@ -434,13 +436,35 @@ export async function GET(request: NextRequest) {
       });
     } else {
       // 列表查询（分页或全部）
+      // 构建查询条件
+      let whereCondition: any = {
+        status: "done",
+        username: username,
+      };
+
+      // 如果有搜索关键词，添加文件名模糊搜索条件
+      if (keyword && keyword.trim()) {
+        // 使用正则表达式进行模糊搜索（不区分大小写）
+        // 腾讯云数据库使用 db.RegExp() 创建正则表达式对象
+        const regexPattern = db.RegExp({
+          regexp: keyword.trim(),
+          options: "i", // 不区分大小写
+        });
+        whereCondition = dbCommand.and([
+          {
+            status: "done",
+            username: username,
+          },
+          dbCommand.or([
+            { oldFileName: regexPattern },
+            { newFileName: regexPattern },
+          ]),
+        ]);
+      }
+
       let query = db
         .collection(COLLECTION_NAME)
-        .limit(1)
-        .where({
-          status: "done",
-          username: username,
-        })
+        .where(whereCondition)
         .orderBy("createTime", "desc");
       
       if (getAll) {
@@ -480,13 +504,10 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      // 查询总数（通过查询所有记录，但只取_id字段）
+      // 查询总数（使用相同的查询条件）
       const countQuery = db
         .collection(COLLECTION_NAME)
-        .where({
-          status: "done",
-          username: username,
-        });
+        .where(whereCondition);
       
       const allRecords: any = await countQuery.field({ _id: true }).get();
       

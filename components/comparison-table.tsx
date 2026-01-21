@@ -1781,6 +1781,10 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   
+  // 搜索状态
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
+  
   // 对比模式选择对话框状态
   const [compareModeModal, setCompareModeModal] = useState<{
     open: boolean;
@@ -1841,8 +1845,8 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
     }
   };
 
-  // 加载历史记录
-  const loadHistoryRecords = async (page: number = 1) => {
+  // 加载历史记录（支持搜索关键词）
+  const loadHistoryRecords = async (page: number = 1, keyword?: string) => {
     setIsLoadingHistory(true);
     try {
       const username = getCurrentUsername();
@@ -1850,7 +1854,20 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         showToast("请先登录", "error");
         return;
       }
-      const response = await fetch(`/api/policy-compare-records?page=${page}&pageSize=500&username=${encodeURIComponent(username)}`);
+      
+      // 构建查询参数
+      const params = new URLSearchParams({
+        page: page.toString(),
+        pageSize: "10", // 每页10条
+        username: username,
+      });
+      
+      // 如果有搜索关键词，添加到参数中
+      if (keyword && keyword.trim()) {
+        params.append("keyword", keyword.trim());
+      }
+      
+      const response = await fetch(`/api/policy-compare-records?${params.toString()}`);
       const data = await response.json();
 
       if (data.success) {
@@ -1866,6 +1883,35 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       showToast("加载历史记录时出错", "error");
     } finally {
       setIsLoadingHistory(false);
+    }
+  };
+
+  // 搜索处理函数
+  const handleSearch = () => {
+    if (searchKeyword.trim()) {
+      setIsSearching(true);
+      setCurrentPage(1); // 搜索时重置到第一页
+      loadHistoryRecords(1, searchKeyword.trim());
+    } else {
+      // 如果搜索关键词为空，加载所有记录
+      setIsSearching(false);
+      setCurrentPage(1);
+      loadHistoryRecords(1);
+    }
+  };
+
+  // 清除搜索
+  const handleClearSearch = () => {
+    setSearchKeyword("");
+    setIsSearching(false);
+    setCurrentPage(1);
+    loadHistoryRecords(1);
+  };
+
+  // 处理搜索框回车事件
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      handleSearch();
     }
   };
 
@@ -2487,7 +2533,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
 
         // 如果当前显示历史记录视图，刷新历史记录列表
         if (showHistory) {
-          await loadHistoryRecords(currentPage);
+          await loadHistoryRecords(currentPage, isSearching ? searchKeyword : undefined);
         }
 
         // 如果详情对话框打开，更新它
@@ -2890,7 +2936,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           return newMap;
         });
         // 重新加载数据以确保数据一致性
-        await loadHistoryRecords(currentPage);
+        await loadHistoryRecords(currentPage, isSearching ? searchKeyword : undefined);
       } else {
         // 当前对比：删除所有选中的项（包括有_id和无_id的）
         selectedRows.forEach((row) => {
@@ -2914,7 +2960,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       showToast("部分删除失败，请检查网络连接", "error");
       // 删除失败时，如果是历史记录，重新加载以确保数据一致性
       if (showHistory) {
-        await loadHistoryRecords(currentPage);
+        await loadHistoryRecords(currentPage, isSearching ? searchKeyword : undefined);
       }
     } finally {
       // 重置删除进度
@@ -3169,6 +3215,8 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
             onClick={() => {
               setShowHistory(false);
               setSelectedIds(new Set()); // 切换时清空选中
+              setSearchKeyword(""); // 切换时清空搜索
+              setIsSearching(false);
             }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
               !showHistory
@@ -3182,6 +3230,8 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
             onClick={() => {
               setShowHistory(true);
               setSelectedIds(new Set()); // 切换时清空选中
+              setSearchKeyword(""); // 切换时清空搜索关键词
+              setIsSearching(false); // 重置搜索状态
               loadHistoryRecords(1);
             }}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -3193,27 +3243,68 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
             历史记录
           </button>
           {showHistory && (
-            <button
-              onClick={() => loadHistoryRecords(currentPage)}
-              disabled={isLoadingHistory}
-              className="px-3 py-2 rounded-lg text-sm font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
-              title="刷新历史记录"
-            >
-              <svg 
-                className={`w-4 h-4 ${isLoadingHistory ? 'animate-spin' : ''}`} 
-                fill="none" 
-                stroke="currentColor" 
-                viewBox="0 0 24 24"
-              >
-                <path 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round" 
-                  strokeWidth="2" 
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
+            <>
+              {/* 搜索框和按钮 */}
+              <div className="flex items-center gap-2 ml-2">
+                <input
+                  type="text"
+                  value={searchKeyword}
+                  onChange={(e) => setSearchKeyword(e.target.value)}
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder="搜索文件名..."
+                  className="px-3 py-2 rounded-lg text-sm border border-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent w-48"
                 />
-              </svg>
-              {isLoadingHistory ? "刷新中..." : "刷新"}
-            </button>
+                <button
+                  onClick={handleSearch}
+                  disabled={isLoadingHistory}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                >
+                  <svg 
+                    className="w-4 h-4" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
+                  >
+                    <path 
+                      strokeLinecap="round" 
+                      strokeLinejoin="round" 
+                      strokeWidth="2" 
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" 
+                    />
+                  </svg>
+                  搜索
+                </button>
+                {isSearching && (
+                  <button
+                    onClick={handleClearSearch}
+                    className="px-3 py-2 rounded-lg text-sm font-medium bg-slate-200 text-slate-700 hover:bg-slate-300 transition-colors"
+                  >
+                    清除
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={() => loadHistoryRecords(currentPage, isSearching ? searchKeyword : undefined)}
+                disabled={isLoadingHistory}
+                className="px-3 py-2 rounded-lg text-sm font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+                title="刷新历史记录"
+              >
+                <svg 
+                  className={`w-4 h-4 ${isLoadingHistory ? 'animate-spin' : ''}`} 
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round" 
+                    strokeWidth="2" 
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" 
+                  />
+                </svg>
+                {isLoadingHistory ? "刷新中..." : "刷新"}
+              </button>
+            </>
           )}
         </div>
 
@@ -3223,7 +3314,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
             <button
               onClick={() => {
                 if (currentPage > 1) {
-                  loadHistoryRecords(currentPage - 1);
+                  loadHistoryRecords(currentPage - 1, isSearching ? searchKeyword : undefined);
                 }
               }}
               disabled={currentPage <= 1 || isLoadingHistory}
@@ -3237,7 +3328,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
             <button
               onClick={() => {
                 if (currentPage < totalPages) {
-                  loadHistoryRecords(currentPage + 1);
+                  loadHistoryRecords(currentPage + 1, isSearching ? searchKeyword : undefined);
                 }
               }}
               disabled={currentPage >= totalPages || isLoadingHistory}
@@ -3367,6 +3458,8 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                       <button
                         onClick={() => {
                           setShowHistory(true);
+                          setSearchKeyword(""); // 切换时清空搜索关键词
+                          setIsSearching(false); // 重置搜索状态
                           loadHistoryRecords(1);
                         }}
                         className="mt-2 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
@@ -3942,7 +4035,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         // 如果当前显示历史记录视图，刷新历史记录列表
         if (showHistory) {
           console.log("🔵 [编辑保存] 检测到历史记录视图，刷新历史记录列表");
-          await loadHistoryRecords(currentPage);
+          await loadHistoryRecords(currentPage, isSearching ? searchKeyword : undefined);
         }
       }}
     />
