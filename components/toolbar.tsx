@@ -13,7 +13,7 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
   const { comparisons, updateComparison } = useFileContext();
   const [isComparing, setIsComparing] = useState(false);
   const [filterStatus, setFilterStatus] = useState("全部状态");
-  const [compareProgress, setCompareProgress] = useState({ current: 0, total: 0, waiting: 0 });
+  const [compareProgress, setCompareProgress] = useState({ current: 0, total: 0, waiting: 0, comparing: 0 });
   const isCancelledRef = useRef(false);
   const comparisonsRef = useRef(comparisons);
   const completedCountRef = useRef(0); // 使用 ref 跟踪完成数量
@@ -80,7 +80,7 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
       }
     });
     setIsComparing(false);
-    setCompareProgress({ current: 0, total: 0, waiting: 0 });
+    setCompareProgress({ current: 0, total: 0, waiting: 0, comparing: 0 });
   };
 
   const handleBatchCompare = async (type: "policy" | "commission") => {
@@ -136,13 +136,19 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
       current: 0,
       total: totalCount,
       waiting: totalCount,
+      comparing: 0,
     });
 
     // 等待一个 tick，确保状态更新完成
     await new Promise(resolve => setTimeout(resolve, 0));
 
     // 使用函数式更新来避免竞态条件
-    const updateProgress = (incrementCurrent: number = 0, decrementWaiting: number = 0) => {
+    const updateProgress = (
+      incrementCurrent: number = 0, 
+      decrementWaiting: number = 0, 
+      incrementComparing: number = 0,
+      decrementComparing: number = 0
+    ) => {
       if (incrementCurrent > 0) {
         completedCountRef.current += incrementCurrent;
       }
@@ -150,6 +156,7 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
         current: completedCountRef.current,
         total: totalCount,
         waiting: Math.max(0, prev.waiting - decrementWaiting),
+        comparing: Math.max(0, prev.comparing + incrementComparing - decrementComparing),
       }));
     };
 
@@ -195,7 +202,7 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
 
         // 从等待中变为对比中
         updateComparison(row.id, { comparisonStatus: "comparing" });
-        updateProgress(0, 1); // 减少等待中数量
+        updateProgress(0, 1, 1, 0); // 减少等待中数量，增加进行中数量
 
         const oldFileUrl = row.lastYearFile!.file_url || row.lastYearFile!.url;
         const newFileUrl = row.thisYearFile!.file_url || row.thisYearFile!.url;
@@ -207,7 +214,7 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
             comparisonStatus: "error",
             comparisonError: "文件名称信息缺失",
           });
-          updateProgress(1, 0); // 增加完成数量
+          updateProgress(1, 0, 0, 1); // 增加完成数量，减少进行中数量
           return;
         }
 
@@ -300,7 +307,7 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
           });
         } finally {
           // 无论成功还是失败，都要更新进度
-          updateProgress(1, 0); // 增加完成数量
+          updateProgress(1, 0, 0, 1); // 增加完成数量，减少进行中数量
         }
       });
 
@@ -350,7 +357,7 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
     } finally {
       setIsComparing(false);
       isCancelledRef.current = false;
-      setCompareProgress({ current: 0, total: 0, waiting: 0 }); // 重置进度
+      setCompareProgress({ current: 0, total: 0, waiting: 0, comparing: 0 }); // 重置进度
     }
   };
 
@@ -379,17 +386,32 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
 
         <div className="flex items-center gap-2">
           {isComparing ? (
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-2 w-full">
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleCancel}
-                  className="rounded-xl bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 transition-colors"
+                  className="rounded-xl bg-red-600 px-4 py-2 text-sm text-white hover:bg-red-700 transition-colors whitespace-nowrap"
                 >
                   取消{compareProgress.waiting > 0 && ` (等待中: ${compareProgress.waiting})`}
                 </button>
-                <span className="text-sm text-slate-600">
-                  对比中 {compareProgress.current}/{compareProgress.total} {compareProgress.waiting > 0 && `(等待中: ${compareProgress.waiting})`}
-                </span>
+                <div className="flex-1 flex flex-col gap-1">
+                  <div className="text-sm text-slate-700 font-medium">
+                    已完成: {compareProgress.current} | 进行中: {compareProgress.comparing} | 等待中: {compareProgress.waiting} | 总计: {compareProgress.total}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 bg-slate-200 rounded-full h-2 overflow-hidden">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ 
+                          width: `${compareProgress.total > 0 ? Math.round((compareProgress.current / compareProgress.total) * 100) : 0}%` 
+                        }}
+                      />
+                    </div>
+                    <span className="text-xs text-slate-600 font-medium min-w-[3rem] text-right">
+                      {compareProgress.total > 0 ? Math.round((compareProgress.current / compareProgress.total) * 100) : 0}%
+                    </span>
+                  </div>
+                </div>
               </div>
               <span className="text-xs text-slate-500 px-1">
                 只能取消等待中的任务，已经开始的任务无法取消
