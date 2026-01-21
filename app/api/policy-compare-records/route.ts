@@ -400,15 +400,15 @@ export async function GET(request: NextRequest) {
     // const page = parseInt(searchParams.get("page") || "1");
     // const pageSize = parseInt(searchParams.get("pageSize") || "100");
     // const skip = (page - 1) * pageSize;
-    const username = searchParams.get("username");
+    // const username = searchParams.get("username");
     // const getAll = searchParams.get("all") === "true";
 
-    if (!username) {
-      return NextResponse.json(
-        { success: false, message: "缺少用户名参数" },
-        { status: 400 }
-      );
-    }
+    // if (!username) {
+    //   return NextResponse.json(
+    //     { success: false, message: "缺少用户名参数" },
+    //     { status: 400 }
+    //   );
+    // }
 
     const db = getDatabase();
 
@@ -458,7 +458,7 @@ export async function GET(request: NextRequest) {
     //   });
     // } else 
     {
-      console.log(`[test查询222`);
+      console.log(`[test查询333`);
       const resultTestQuery: any = await db
       .collection("policy_compare_records")
       .limit(1)
