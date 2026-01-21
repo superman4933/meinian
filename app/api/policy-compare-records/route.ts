@@ -395,7 +395,7 @@ export async function GET(request: NextRequest) {
   
   try {
    
-    const searchParams = request.nextUrl.searchParams;
+    // const searchParams = request.nextUrl.searchParams;
     // const recordId = searchParams.get("id");
     // const page = parseInt(searchParams.get("page") || "1");
     // const pageSize = parseInt(searchParams.get("pageSize") || "100");
