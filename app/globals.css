@@ -66,9 +66,7 @@
     transform: translateY(-30px) rotate(180deg);
     opacity: 0.4;
   }
-}
-
-.animate-float {
+}.animate-float {
   animation: float 6s ease-in-out infinite;
 }
 

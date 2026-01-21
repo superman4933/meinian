@@ -31,6 +31,29 @@ export async function GET(request: NextRequest) {
     console.log(`[test-db-connection ${requestId}] ========== 开始测试数据库连接 ==========`);
     console.log(`[test-db-connection ${requestId}] 请求时间: ${new Date().toISOString()}`);
     
+    // 解析 URL 参数
+    const { searchParams } = new URL(request.url);
+    const limitParam = searchParams.get("limit");
+    const limit = limitParam ? parseInt(limitParam, 10) : 1; // 默认查询 1 条
+    
+    // 验证 limit 参数
+    if (isNaN(limit) || limit < 1 || limit > 100) {
+      return NextResponse.json({
+        success: false,
+        message: "limit 参数无效，必须是 1-100 之间的数字",
+        receivedLimit: limitParam,
+      }, { status: 400 });
+    }
+    
+    console.log(`[test-db-connection ${requestId}] URL 参数解析:`, {
+      requestUrl: request.url,
+      limitParam,
+      parsedLimit: limit,
+      // 测试两种解析方式
+      nextUrlSearchParams: request.nextUrl?.searchParams?.toString() || "未定义",
+      urlSearchParams: searchParams.toString(),
+    });
+    
     // 环境变量检查
     console.log(`[test-db-connection ${requestId}] 环境变量检查:`, {
       TCB_ENV_ID: ENV_ID,
@@ -45,13 +68,13 @@ export async function GET(request: NextRequest) {
     const dbInitTime = Date.now() - dbInitStartTime;
     console.log(`[test-db-connection ${requestId}] 数据库连接初始化完成，耗时: ${dbInitTime}ms`);
     
-    // 测试查询 - 查询 policy_compare_records 集合
-    console.log(`[test-db-connection ${requestId}] 开始执行测试查询...`);
+    // 测试查询 - 使用 limit 参数
+    console.log(`[test-db-connection ${requestId}] 开始执行测试查询，limit: ${limit}...`);
     const queryStartTime = Date.now();
     
     const result: any = await db
       .collection("policy_compare_records")
-      .limit(1)
+      .limit(limit) // 使用参数中的 limit
       .get();
     
     const queryTime = Date.now() - queryStartTime;
@@ -88,6 +111,8 @@ export async function GET(request: NextRequest) {
     console.log(`[test-db-connection ${requestId}] ✅ 测试成功，总耗时: ${totalTime}ms`, {
       dataCount,
       hasData: dataCount > 0,
+      requestedLimit: limit,
+      actualReturned: dataCount,
     });
     
     return NextResponse.json({
@@ -96,7 +121,8 @@ export async function GET(request: NextRequest) {
       data: {
         collection: "policy_compare_records",
         recordCount: dataCount,
-        firstRecord: dataCount > 0 ? result.data[0] : null,
+        requestedLimit: limit,
+        records: result.data || [],
       },
       requestId,
       timing: {
@@ -106,6 +132,10 @@ export async function GET(request: NextRequest) {
       },
       env: {
         envId: ENV_ID,
+      },
+      params: {
+        limit: limit,
+        limitParam: limitParam,
       },
     });
   } catch (error: any) {
