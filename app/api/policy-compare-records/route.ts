@@ -394,7 +394,9 @@ export async function GET(request: NextRequest) {
 // }
   
   try {
-   
+      console.error(`[测试接口test查询555`);
+      const { searchParams } = request.nextUrl
+      const username = searchParams.get('username')
     // const searchParams = request.nextUrl.searchParams;
     // const recordId = searchParams.get("id");
     // const page = parseInt(searchParams.get("page") || "1");
@@ -403,12 +405,12 @@ export async function GET(request: NextRequest) {
     // const username = searchParams.get("username");
     // const getAll = searchParams.get("all") === "true";
 
-    // if (!username) {
-    //   return NextResponse.json(
-    //     { success: false, message: "缺少用户名参数" },
-    //     { status: 400 }
-    //   );
-    // }
+    if (!username) {
+      return NextResponse.json(
+        { success: false, message: "缺少用户名参数" },
+        { status: 400 }
+      );
+    }
 
     const db = getDatabase();
 
