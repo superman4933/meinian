@@ -545,7 +545,7 @@ function TagTooltip({
     }
   }, [isHovered, tagRef]);
 
-  const tooltipContent = isHovered && content.length > 0 && typeof window !== "undefined" ? (
+  const tooltipContent = isHovered && Array.isArray(content) && content.length > 0 && typeof window !== "undefined" ? (
     createPortal(
       <div
         className="fixed z-[9999] w-96 p-3 bg-white border border-slate-200 rounded-lg shadow-xl text-xs text-slate-700 pointer-events-none max-h-96 overflow-y-auto"
@@ -579,7 +579,8 @@ function ComparisonResultDisplay({
   structured: ComparisonStructuredData;
   onExpandToggle: () => void;
 }) {
-  const { added, modified, deleted } = structured;
+  // 添加默认值，防止 undefined 错误
+  const { added = [], modified = [], deleted = [] } = structured || {};
   const [hoveredTag, setHoveredTag] = useState<"added" | "modified" | "deleted" | null>(null);
   const addedRef = useRef<HTMLButtonElement>(null);
   const modifiedRef = useRef<HTMLButtonElement>(null);
@@ -587,7 +588,7 @@ function ComparisonResultDisplay({
 
   return (
     <div className="flex flex-row flex-wrap items-center gap-2">
-      {added.length > 0 && (
+      {Array.isArray(added) && added.length > 0 && (
         <>
           <button
             ref={addedRef}
@@ -607,7 +608,7 @@ function ComparisonResultDisplay({
           />
         </>
       )}
-      {modified.length > 0 && (
+      {Array.isArray(modified) && modified.length > 0 && (
         <>
           <button
             ref={modifiedRef}
@@ -627,7 +628,7 @@ function ComparisonResultDisplay({
           />
         </>
       )}
-      {deleted.length > 0 && (
+      {Array.isArray(deleted) && deleted.length > 0 && (
         <>
           <button
             ref={deletedRef}
@@ -828,7 +829,8 @@ function ComparisonCardsRow({
 }) {
   if (!isOpen) return null;
 
-  const { added, modified, deleted, summary } = structured;
+  // 添加默认值，防止 undefined 错误
+  const { added = [], modified = [], deleted = [], summary } = structured || {};
 
     return (
       <tr className="bg-slate-50/50">
@@ -851,7 +853,7 @@ function ComparisonCardsRow({
           {/* 卡片内容 */}
           <div className="flex flex-row gap-3 mb-3">
             {/* 新增内容卡片 */}
-            {added.length > 0 && (
+            {Array.isArray(added) && added.length > 0 && (
               <div className="flex-1 min-w-[280px] rounded-lg border-2 border-emerald-200 bg-emerald-50/50 p-3">
                 <EditableContentSection
                   title="新增内容"
@@ -870,7 +872,7 @@ function ComparisonCardsRow({
             )}
 
             {/* 修改内容卡片 */}
-            {modified.length > 0 && (
+            {Array.isArray(modified) && modified.length > 0 && (
               <div className="flex-1 min-w-[280px] rounded-lg border-2 border-blue-200 bg-blue-50/50 p-3">
                 <EditableContentSection
                   title="修改内容"
@@ -889,7 +891,7 @@ function ComparisonCardsRow({
             )}
 
             {/* 删除内容卡片 */}
-            {deleted.length > 0 && (
+            {Array.isArray(deleted) && deleted.length > 0 && (
               <div className="flex-1 min-w-[280px] rounded-lg border-2 border-red-200 bg-red-50/50 p-3">
                 <EditableContentSection
                   title="删除内容"
@@ -3828,7 +3830,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                       </div>
                     )}
                     <div className="flex flex-col gap-3 mb-3">
-                      {row.comparisonStructured.added.length > 0 && (
+                      {row.comparisonStructured && Array.isArray(row.comparisonStructured.added) && row.comparisonStructured.added.length > 0 && (
                         <div className="rounded-lg border-2 border-emerald-200 bg-emerald-50/50 p-3">
                           <EditableContentSection
                             title="新增内容"
@@ -3845,7 +3847,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                           />
                         </div>
                       )}
-                      {row.comparisonStructured.modified.length > 0 && (
+                      {row.comparisonStructured && Array.isArray(row.comparisonStructured.modified) && row.comparisonStructured.modified.length > 0 && (
                         <div className="rounded-lg border-2 border-blue-200 bg-blue-50/50 p-3">
                           <EditableContentSection
                             title="修改内容"
@@ -3862,7 +3864,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                           />
                         </div>
                       )}
-                      {row.comparisonStructured.deleted.length > 0 && (
+                      {row.comparisonStructured && Array.isArray(row.comparisonStructured.deleted) && row.comparisonStructured.deleted.length > 0 && (
                         <div className="rounded-lg border-2 border-red-200 bg-red-50/50 p-3">
                           <EditableContentSection
                             title="删除内容"
