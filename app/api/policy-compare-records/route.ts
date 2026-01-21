@@ -433,18 +433,19 @@ export async function GET(request: NextRequest) {
       // 列表查询（分页或全部）
       let query = db
         .collection(COLLECTION_NAME)
-        .where({
-          status: "done",
-          username: username,
-        })
-        .orderBy("createTime", "desc");
+        .limit(1)
+        // .where({
+        //   status: "done",
+        //   username: username,
+        // })
+        // .orderBy("createTime", "desc");
       
-      if (getAll) {
-        const MAX_EXPORT_LIMIT = 1000;
-        query = query.limit(MAX_EXPORT_LIMIT);
-      } else {
-        query = query.skip(skip).limit(pageSize);
-      }
+      // if (getAll) {
+      //   const MAX_EXPORT_LIMIT = 1000;
+      //   query = query.limit(MAX_EXPORT_LIMIT);
+      // } else {
+      //   query = query.skip(skip).limit(pageSize);
+      // }
 
       const result: any = await query.get();
 
