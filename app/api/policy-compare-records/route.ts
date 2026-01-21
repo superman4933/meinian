@@ -430,6 +430,17 @@ export async function GET(request: NextRequest) {
         data: record,
       });
     } else {
+      console.log(`[test查询`);
+      const resultTestQuery: any = await db
+      .collection("policy_compare_records")
+      .limit(1)
+      .get();
+    
+   
+    console.log(`[test查询结果（原始数据）:`, JSON.stringify(resultTestQuery, null, 2));
+
+
+      
       console.error("列表查询数据库名称:", COLLECTION_NAME);
       // 列表查询（分页或全部）
       let query = db
