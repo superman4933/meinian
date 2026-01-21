@@ -368,13 +368,13 @@ function getDatabase() {
 // GET: 分页查询历史记录
 export async function GET(request: NextRequest) {
   
-try {
-  const db = getDatabase();
-  console.log(`[test查询]12345`);
-  const resultTestQuery: any = await db
-  .collection("policy_compare_records")
-  .limit(1)
-  .get();
+// try {
+//   const db = getDatabase();
+//   console.log(`[test查询]12345`);
+//   const resultTestQuery: any = await db
+//   .collection("policy_compare_records")
+//   .limit(1)
+//   .get();
   // console.log(`[test查询结果（原始数据）:`, JSON.stringify(resultTestQuery, null, 2));
   // return NextResponse.json({
   //   success: true,
@@ -382,7 +382,7 @@ try {
   // });
 
 
-} catch (error: any) {
+// } catch (error: any) {
   // console.error("查询对比记录错误:", error);
   // return NextResponse.json(
   //   {
@@ -391,72 +391,73 @@ try {
   //   },
   //   { status: 500 }
   // );
-}
+// }
   
   try {
-    const { searchParams } = new URL(request.url);
-    const recordId = searchParams.get("id");
-    const page = parseInt(searchParams.get("page") || "1");
-    const pageSize = parseInt(searchParams.get("pageSize") || "100");
-    const skip = (page - 1) * pageSize;
-    const username = searchParams.get("username");
-    const getAll = searchParams.get("all") === "true";
+    // const { searchParams } = new URL(request.url);
+    // const recordId = searchParams.get("id");
+    // const page = parseInt(searchParams.get("page") || "1");
+    // const pageSize = parseInt(searchParams.get("pageSize") || "100");
+    // const skip = (page - 1) * pageSize;
+    // const username = searchParams.get("username");
+    // const getAll = searchParams.get("all") === "true";
 
-    if (!username) {
-      return NextResponse.json(
-        { success: false, message: "缺少用户名参数" },
-        { status: 400 }
-      );
-    }
+    // if (!username) {
+    //   return NextResponse.json(
+    //     { success: false, message: "缺少用户名参数" },
+    //     { status: 400 }
+    //   );
+    // }
 
     const db = getDatabase();
 
-    if (recordId) {
-      // 查询单个记录（通过数据库的_id）
-      const result: any = await db
-        .collection(COLLECTION_NAME)
-        .doc(recordId)
-        .get();
+    // if (recordId) {
+    //   // 查询单个记录（通过数据库的_id）
+    //   const result: any = await db
+    //     .collection(COLLECTION_NAME)
+    //     .doc(recordId)
+    //     .get();
 
-      if (typeof result.code === 'string') {
-        return NextResponse.json(
-          {
-            success: false,
-            message: result.message || "查询失败",
-            code: result.code,
-          },
-          { status: 500 }
-        );
-      }
+    //   if (typeof result.code === 'string') {
+    //     return NextResponse.json(
+    //       {
+    //         success: false,
+    //         message: result.message || "查询失败",
+    //         code: result.code,
+    //       },
+    //       { status: 500 }
+    //     );
+    //   }
 
-      if (!result.data || result.data.length === 0) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "记录不存在",
-          },
-          { status: 404 }
-        );
-      }
+    //   if (!result.data || result.data.length === 0) {
+    //     return NextResponse.json(
+    //       {
+    //         success: false,
+    //         message: "记录不存在",
+    //       },
+    //       { status: 404 }
+    //     );
+    //   }
 
-      const record = result.data[0];
-      // 验证记录是否属于当前用户
-      if (record.username !== username) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "无权访问此记录",
-          },
-          { status: 403 }
-        );
-      }
+    //   const record = result.data[0];
+    //   // 验证记录是否属于当前用户
+    //   if (record.username !== username) {
+    //     return NextResponse.json(
+    //       {
+    //         success: false,
+    //         message: "无权访问此记录",
+    //       },
+    //       { status: 403 }
+    //     );
+    //   }
 
-      return NextResponse.json({
-        success: true,
-        data: record,
-      });
-    } else {
-      console.log(`[test查询`);
+    //   return NextResponse.json({
+    //     success: true,
+    //     data: record,
+    //   });
+    // } else 
+    {
+      console.log(`[test查询111`);
       const resultTestQuery: any = await db
       .collection("policy_compare_records")
       .limit(1)
@@ -502,49 +503,49 @@ try {
       const dataCount = result.data ? result.data.length : 0;
 
       // 如果获取全部，直接返回数据，不需要分页信息
-      if (getAll) {
-        const returnedCount = dataCount;
-        const hasMore = returnedCount >= 1000;
+      // if (getAll) {
+      //   const returnedCount = dataCount;
+      //   const hasMore = returnedCount >= 1000;
         
-        return NextResponse.json({
-          success: true,
-          data: result.data || [],
-          total: returnedCount,
-          hasMore: hasMore,
-          message: hasMore ? "数据量较大，仅返回前1000条记录。如需导出全部数据，请联系管理员。" : undefined,
-        });
-      }
+      //   return NextResponse.json({
+      //     success: true,
+      //     data: result.data || [],
+      //     total: returnedCount,
+      //     hasMore: hasMore,
+      //     message: hasMore ? "数据量较大，仅返回前1000条记录。如需导出全部数据，请联系管理员。" : undefined,
+      //   });
+      // }
 
       // 查询总数（通过查询所有记录，但只取_id字段）
-      const countQuery = db
-        .collection(COLLECTION_NAME)
-        .where({
-          status: "done",
-          username: username,
-        });
+      // const countQuery = db
+      //   .collection(COLLECTION_NAME)
+      //   .where({
+      //     status: "done",
+      //     username: username,
+      //   });
       
-      const allRecords: any = await countQuery.field({ _id: true }).get();
+      // const allRecords: any = await countQuery.field({ _id: true }).get();
       
-      let total = 0;
-      if (typeof allRecords.code === 'string') {
-        total = dataCount;
-      } else {
-        total = allRecords.data ? allRecords.data.length : 0;
-      }
+      // let total = 0;
+      // if (typeof allRecords.code === 'string') {
+      //   total = dataCount;
+      // } else {
+      //   total = allRecords.data ? allRecords.data.length : 0;
+      // }
       
-      const totalPages = Math.ceil(total / pageSize);
+      // const totalPages = Math.ceil(total / pageSize);
 
       return NextResponse.json({
         success: true,
         data: result.data || [],
-        pagination: {
-          page,
-          pageSize,
-          total,
-          totalPages,
-          hasNextPage: page < totalPages,
-          hasPrevPage: page > 1,
-        },
+        // pagination: {
+        //   page,
+        //   pageSize,
+        //   total,
+        //   totalPages,
+        //   hasNextPage: page < totalPages,
+        //   hasPrevPage: page > 1,
+        // },
       });
     }
   } catch (error: any) {
