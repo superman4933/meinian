@@ -252,10 +252,20 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
             return beijingTime.toISOString();
           };
 
+          // 规范化 structured 数据，确保所有字段都存在且类型正确
+          const normalizedStructured = data.structured ? {
+            summary: data.structured.summary || "",
+            added: Array.isArray(data.structured.added) ? data.structured.added : [],
+            modified: Array.isArray(data.structured.modified) ? data.structured.modified : [],
+            deleted: Array.isArray(data.structured.deleted) ? data.structured.deleted : [],
+            statistics: data.structured.statistics || {},
+            detailed: data.structured.detailed || "",
+          } : undefined;
+
           updateComparison(row.id, {
             comparisonStatus: "done",
             comparisonResult: resultContent,
-            comparisonStructured: data.structured || undefined,
+            comparisonStructured: normalizedStructured,
             isJsonFormat: data.isJsonFormat || false,
             comparisonError: undefined,
             compareTime: getBeijingTime(), // 当前对比时间（北京时间）

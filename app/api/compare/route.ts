@@ -436,16 +436,27 @@ export async function POST(request: NextRequest) {
           }
         }
         
-        structuredData = parsedJson;
+        // 规范化 structuredData，确保所有必需的字段都存在且类型正确
+        structuredData = {
+          summary: parsedJson.summary || "",
+          added: Array.isArray(parsedJson.added) ? parsedJson.added : [],
+          modified: Array.isArray(parsedJson.modified) ? parsedJson.modified : [],
+          deleted: Array.isArray(parsedJson.deleted) ? parsedJson.deleted : [],
+          statistics: parsedJson.statistics || {},
+          detailed: parsedJson.detailed || "",
+        };
         isJsonFormat = true;
-        markdownContent = parsedJson.detailed || null;
+        markdownContent = structuredData.detailed || null;
         console.log("检测到JSON格式的结构化数据:", {
-          hasSummary: !!parsedJson.summary,
-          hasAdded: !!parsedJson.added,
-          hasModified: !!parsedJson.modified,
-          hasDeleted: !!parsedJson.deleted,
-          hasStatistics: !!parsedJson.statistics,
-          hasDetailed: !!parsedJson.detailed,
+          hasSummary: !!structuredData.summary,
+          hasAdded: !!structuredData.added,
+          addedCount: structuredData.added.length,
+          hasModified: !!structuredData.modified,
+          modifiedCount: structuredData.modified.length,
+          hasDeleted: !!structuredData.deleted,
+          deletedCount: structuredData.deleted.length,
+          hasStatistics: !!structuredData.statistics,
+          hasDetailed: !!structuredData.detailed,
         });
       } else {
         // 不是预期的JSON结构，当作markdown处理

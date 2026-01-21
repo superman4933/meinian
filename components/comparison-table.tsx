@@ -2708,9 +2708,17 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                 parsedJson = extractedContent;
               }
             }
-            structuredData = parsedJson;
+            // 规范化 structuredData，确保所有必需的字段都存在且类型正确
+            structuredData = {
+              summary: parsedJson.summary || "",
+              added: Array.isArray(parsedJson.added) ? parsedJson.added : [],
+              modified: Array.isArray(parsedJson.modified) ? parsedJson.modified : [],
+              deleted: Array.isArray(parsedJson.deleted) ? parsedJson.deleted : [],
+              statistics: parsedJson.statistics || {},
+              detailed: parsedJson.detailed || "",
+            };
             isJsonFormat = true;
-            markdownContent = parsedJson.detailed || null;
+            markdownContent = structuredData.detailed || null;
           } else {
             if (typeof extractedContent === 'string') {
               markdownContent = extractedContent;
