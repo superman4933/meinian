@@ -375,14 +375,14 @@ try {
   .collection("policy_compare_records")
   .limit(1)
   .get();
-
+  console.log(`[test查询结果（原始数据）:`, JSON.stringify(resultTestQuery, null, 2));
   return NextResponse.json({
     success: true,
     message: "数据库连接测试成功",
   });
 
-console.log(`[test查询结果（原始数据）:`, JSON.stringify(resultTestQuery, null, 2));
-} catch (error) {
+
+} catch (error: any) {
   console.error("查询对比记录错误:", error);
   return NextResponse.json(
     {
