@@ -458,14 +458,14 @@ export async function GET(request: NextRequest) {
     //   });
     // } else 
     {
-      console.log(`[test查询333`);
+      console.error(`[test查询555`);
       const resultTestQuery: any = await db
       .collection("policy_compare_records")
       .limit(1)
       .get();
     
    
-    console.log(`[test查询结果（原始数据）:`, JSON.stringify(resultTestQuery, null, 2));
+    console.error(`[test查询结果（原始数据）:`, JSON.stringify(resultTestQuery, null, 2));
 
 
       
