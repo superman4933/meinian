@@ -394,20 +394,20 @@ export async function GET(request: NextRequest) {
 // }
   
   try {
-    // const { searchParams } = new URL(request.url);
-    // const recordId = searchParams.get("id");
-    // const page = parseInt(searchParams.get("page") || "1");
-    // const pageSize = parseInt(searchParams.get("pageSize") || "100");
-    // const skip = (page - 1) * pageSize;
-    // const username = searchParams.get("username");
-    // const getAll = searchParams.get("all") === "true";
+    const { searchParams } = new URL(request.url);
+    const recordId = searchParams.get("id");
+    const page = parseInt(searchParams.get("page") || "1");
+    const pageSize = parseInt(searchParams.get("pageSize") || "100");
+    const skip = (page - 1) * pageSize;
+    const username = searchParams.get("username");
+    const getAll = searchParams.get("all") === "true";
 
-    // if (!username) {
-    //   return NextResponse.json(
-    //     { success: false, message: "缺少用户名参数" },
-    //     { status: 400 }
-    //   );
-    // }
+    if (!username) {
+      return NextResponse.json(
+        { success: false, message: "缺少用户名参数" },
+        { status: 400 }
+      );
+    }
 
     const db = getDatabase();
 
