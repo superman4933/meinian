@@ -396,12 +396,12 @@ export async function GET(request: NextRequest) {
   try {
    
     const searchParams = request.nextUrl.searchParams;
-    const recordId = searchParams.get("id");
-    const page = parseInt(searchParams.get("page") || "1");
-    const pageSize = parseInt(searchParams.get("pageSize") || "100");
-    const skip = (page - 1) * pageSize;
+    // const recordId = searchParams.get("id");
+    // const page = parseInt(searchParams.get("page") || "1");
+    // const pageSize = parseInt(searchParams.get("pageSize") || "100");
+    // const skip = (page - 1) * pageSize;
     const username = searchParams.get("username");
-    const getAll = searchParams.get("all") === "true";
+    // const getAll = searchParams.get("all") === "true";
 
     if (!username) {
       return NextResponse.json(
@@ -458,7 +458,7 @@ export async function GET(request: NextRequest) {
     //   });
     // } else 
     {
-      console.log(`[test查询111`);
+      console.log(`[test查询222`);
       const resultTestQuery: any = await db
       .collection("policy_compare_records")
       .limit(1)
