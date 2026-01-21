@@ -370,12 +370,16 @@ export async function GET(request: NextRequest) {
   
 try {
   const db = getDatabase();
-  console.log(`[test查询`);
+  console.log(`[test查询]123`);
   const resultTestQuery: any = await db
   .collection("policy_compare_records")
   .limit(1)
   .get();
 
+  return NextResponse.json({
+    success: true,
+    message: "数据库连接测试成功",
+  });
 
 console.log(`[test查询结果（原始数据）:`, JSON.stringify(resultTestQuery, null, 2));
 } catch (error) {
