@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import tcb from "@cloudbase/node-sdk";
-
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 // 腾讯云开发环境ID
 const ENV_ID = process.env.TCB_ENV_ID || "pet-8g5ohyrp269f409e-9bua741dcc7";
 
