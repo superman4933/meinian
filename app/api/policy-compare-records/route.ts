@@ -430,6 +430,7 @@ export async function GET(request: NextRequest) {
         data: record,
       });
     } else {
+      console.error("列表查询数据库名称:", COLLECTION_NAME);
       // 列表查询（分页或全部）
       let query = db
         .collection(COLLECTION_NAME)
