@@ -3,6 +3,11 @@ import { getCozeToken } from "@/lib/coze-config";
 import { jsonrepair } from "jsonrepair";
 import { Agent, setGlobalDispatcher } from "undici";
 
+// 路由配置
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 600; // 10分钟（600秒），Vercel Pro 最大支持 300 秒，自托管可以更长
+
 const WORKFLOW_ID = "7588132283023786047";
 const MAX_RETRIES = 5; // 最大重试次数
 const RETRY_DELAY = 2000; // 重试延迟（毫秒）

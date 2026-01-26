@@ -68,9 +68,7 @@
   }
 }.animate-float {
   animation: float 6s ease-in-out infinite;
-}
-
-/* 慢速浮动动画 */
+}/* 慢速浮动动画 */
 @keyframes float-slow {
   0%, 100% {
     transform: translate(0, 0) scale(1);
