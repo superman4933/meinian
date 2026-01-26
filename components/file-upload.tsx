@@ -167,6 +167,21 @@ export function FileUpload({ type }: FileUploadProps) {
         body: formData,
       });
 
+      // 先检查响应状态，再尝试解析 JSON
+      if (!response.ok) {
+        let errorMessage = `上传失败 (${response.status})`;
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorMessage;
+        } catch (e) {
+          // 如果响应不是 JSON，使用状态文本
+          const text = await response.text();
+          errorMessage = text || response.statusText || errorMessage;
+        }
+        throw new Error(errorMessage);
+      }
+
+      // 响应成功，解析 JSON
       const data = await response.json();
 
       // 记录上传响应数据
@@ -182,21 +197,13 @@ export function FileUpload({ type }: FileUploadProps) {
         console.log(`✅ 文件上传成功！访问地址: ${data.file_url}`);
       }
 
-      if (!response.ok || !data.success) {
+      if (!data.success) {
         // 区分不同类型的错误
         let errorMessage = "上传失败";
-        if (!response.ok) {
-          if (response.status === 401) {
-            errorMessage = "认证失败，请检查API Token";
-          } else if (response.status === 413) {
-            errorMessage = "文件过大，请选择小于 100MB 的文件";
-          } else if (response.status >= 500) {
-            errorMessage = "服务器错误，请稍后重试";
-          } else if (data.error_source === "扣子API") {
-            errorMessage = `扣子API错误: ${data.message || "未知错误"}`;
-          } else {
-            errorMessage = data.message || `上传失败 (${response.status})`;
-          }
+        if (data.error_source === "七牛云") {
+          errorMessage = `七牛云错误: ${data.message || "未知错误"}`;
+        } else if (data.error_source === "扣子API") {
+          errorMessage = `扣子API错误: ${data.message || "未知错误"}`;
         } else {
           errorMessage = data.message || "上传失败";
         }
