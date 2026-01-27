@@ -509,6 +509,9 @@ export async function POST(request: NextRequest) {
               // 无权更新，继续执行创建模式
             } else {
               // 验证通过，执行更新
+              // 保存 createTime（更新时不会改变 createTime）
+              const originalCreateTime = record.createTime;
+              
               const updateData: any = {
                 city,
                 fileName,
@@ -545,6 +548,7 @@ export async function POST(request: NextRequest) {
                   updated: updateResult.updated || 0,
                 });
                 result._id = recordId; // 返回记录ID
+                result.createTime = originalCreateTime; // 直接使用原记录的 createTime（更新时不会改变）
                 updateSuccess = true; // 标记更新成功
               }
             }
@@ -596,6 +600,7 @@ export async function POST(request: NextRequest) {
                 collection: COLLECTION_NAME,
               });
               result._id = _id; // 返回记录ID
+              result.createTime = record.createTime; // 直接返回保存时的时间（UTC）
             } else {
               console.error("❌ 保存成功但未返回ID:", saveResult);
             }

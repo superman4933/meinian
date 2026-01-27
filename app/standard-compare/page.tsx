@@ -889,88 +889,28 @@ export default function StandardComparePage() {
                     return;
                 }
 
-                // 如果接口返回了 _id，从数据库查询记录获取 createTime
-                if (data._id) {
-                    try {
-                        const recordResponse = await fetch(`/api/standard-compare-records?id=${data._id}`);
-                        const recordData = await recordResponse.json();
-                        const createTime = recordData.success && recordData.data ? recordData.data.createTime : null;
-                        
-                        // 更新文件状态，使用数据库的创建时间
-                        setFiles((prev) =>
-                            prev.map((f) =>
-                                f.id === fileId
-                                    ? {
-                                        ...f,
-                                        compareStatus: "success" as const,
-                                        compareResult: data.structured,
-                                        compareProgress: "对比完成",
-                                        compareTime: createTime || undefined, // 使用数据库的创建时间
-                                        _id: data._id,
-                                        isVerified: mode === "overwrite" ? false : f.isVerified, // 覆盖模式重置审核状态
-                                    }
-                                    : f
-                            )
-                        );
-                        // 如果是历史记录模式，同时更新historyFiles状态
-                        if (showHistory) {
-                            setHistoryFiles((prev) =>
-                                prev.map((f) =>
-                                    f.id === fileId
-                                        ? {
-                                            ...f,
-                                            compareStatus: "success" as const,
-                                            compareResult: data.structured,
-                                            compareProgress: "对比完成",
-                                            compareTime: createTime || undefined, // 使用数据库的创建时间
-                                            _id: data._id,
-                                            isVerified: mode === "overwrite" ? false : f.isVerified,
-                                        }
-                                        : f
-                                )
-                            );
-                        }
-                    } catch (e) {
-                        console.error("查询记录创建时间失败:", e);
-                        // 查询失败时，使用当前时间作为临时时间（UTC）
-                        const fallbackTime = new Date().toISOString();
-                        setFiles((prev) =>
-                            prev.map((f) =>
-                                f.id === fileId
-                                    ? {
-                                        ...f,
-                                        compareStatus: "success" as const,
-                                        compareResult: data.structured,
-                                        compareProgress: "对比完成",
-                                        compareTime: fallbackTime, // 使用当前时间作为临时时间
-                                        _id: data._id,
-                                        isVerified: mode === "overwrite" ? false : f.isVerified,
-                                    }
-                                    : f
-                            )
-                        );
-                        if (showHistory) {
-                            setHistoryFiles((prev) =>
-                                prev.map((f) =>
-                                    f.id === fileId
-                                        ? {
-                                            ...f,
-                                            compareStatus: "success" as const,
-                                            compareResult: data.structured,
-                                            compareProgress: "对比完成",
-                                            compareTime: fallbackTime, // 使用当前时间作为临时时间
-                                            _id: data._id,
-                                            isVerified: mode === "overwrite" ? false : f.isVerified,
-                                        }
-                                        : f
-                                )
-                            );
-                        }
-                    }
-                } else {
-                    // 如果没有 _id，使用当前时间作为临时时间（UTC）
-                    const fallbackTime = new Date().toISOString();
-                    setFiles((prev) =>
+                // 使用API返回的 createTime（如果API返回了 _id，应该也返回了 createTime）
+                const createTime = data.createTime || (data._id ? new Date().toISOString() : undefined);
+                
+                // 更新文件状态，使用API返回的创建时间
+                setFiles((prev) =>
+                    prev.map((f) =>
+                        f.id === fileId
+                            ? {
+                                ...f,
+                                compareStatus: "success" as const,
+                                compareResult: data.structured,
+                                compareProgress: "对比完成",
+                                compareTime: createTime, // 使用API返回的创建时间
+                                _id: data._id,
+                                isVerified: mode === "overwrite" ? false : f.isVerified, // 覆盖模式重置审核状态
+                            }
+                            : f
+                    )
+                );
+                // 如果是历史记录模式，同时更新historyFiles状态
+                if (showHistory) {
+                    setHistoryFiles((prev) =>
                         prev.map((f) =>
                             f.id === fileId
                                 ? {
@@ -978,26 +918,13 @@ export default function StandardComparePage() {
                                     compareStatus: "success" as const,
                                     compareResult: data.structured,
                                     compareProgress: "对比完成",
-                                    compareTime: fallbackTime, // 使用当前时间作为临时时间
+                                    compareTime: createTime, // 使用API返回的创建时间
+                                    _id: data._id,
+                                    isVerified: mode === "overwrite" ? false : f.isVerified,
                                 }
                                 : f
                         )
                     );
-                    if (showHistory) {
-                        setHistoryFiles((prev) =>
-                            prev.map((f) =>
-                                f.id === fileId
-                                    ? {
-                                        ...f,
-                                        compareStatus: "success" as const,
-                                        compareResult: data.structured,
-                                        compareProgress: "对比完成",
-                                        compareTime: fallbackTime, // 使用当前时间作为临时时间
-                                    }
-                                    : f
-                            )
-                        );
-                    }
                 }
             } else {
                 const errorMessage = data.message || (data.structured ? "返回数据格式不正确" : "对比失败");
