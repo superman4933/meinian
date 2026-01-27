@@ -2046,41 +2046,6 @@ export default function StandardComparePage() {
                 <div className="flex flex-col gap-3">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                            {!showHistory && (
-                                <>
-                                    <button
-                                        onClick={handleBatchCompare}
-                                        disabled={isComparing || files.filter(f => f.uploadStatus === "success" && f.file_url && f.compareStatus !== "comparing" && f.compareStatus !== "waiting" && f.compareStatus !== "success").length === 0}
-                                        className="px-4 py-2 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-                                    >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                                        </svg>
-                                        批量对比
-                                    </button>
-                                    {isComparing && (
-                                        <button
-                                            onClick={handleCancelCompare}
-                                            className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors flex items-center gap-2"
-                                        >
-                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                                            </svg>
-                                            取消对比
-                                        </button>
-                                    )}
-                                    {isComparing && compareProgress.total > 0 && (
-                                        <div className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 flex items-center gap-2">
-                                            <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                            </svg>
-                                            进度: {compareProgress.current}/{compareProgress.total} 
-                                            {compareProgress.waiting > 0 && ` (等待: ${compareProgress.waiting})`}
-                                            {compareProgress.comparing > 0 && ` (对比中: ${compareProgress.comparing})`}
-                                        </div>
-                                    )}
-                                </>
-                            )}
                             <button
                                 onClick={toggleSelectAll}
                                 className="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2"
@@ -2279,6 +2244,43 @@ export default function StandardComparePage() {
                         </button>
                     </div>
                 </div>
+                )}
+
+                {/* 批量对比和进度显示（仅当前对比显示，位于上传区域下方、表格上方） */}
+                {!showHistory && (
+                    <div className="flex items-center justify-end gap-3">
+                        <button
+                            onClick={handleBatchCompare}
+                            disabled={isComparing || files.filter(f => f.uploadStatus === "success" && f.file_url && f.compareStatus !== "comparing" && f.compareStatus !== "waiting" && f.compareStatus !== "success").length === 0}
+                            className="px-4 py-2 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                            </svg>
+                            批量对比
+                        </button>
+                        {isComparing && (
+                            <button
+                                onClick={handleCancelCompare}
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors flex items-center gap-2"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                取消对比
+                            </button>
+                        )}
+                        {isComparing && compareProgress.total > 0 && (
+                            <div className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 flex items-center gap-2">
+                                <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                进度: {compareProgress.current}/{compareProgress.total} 
+                                {compareProgress.waiting > 0 && ` (等待: ${compareProgress.waiting})`}
+                                {compareProgress.comparing > 0 && ` (对比中: ${compareProgress.comparing})`}
+                            </div>
+                        )}
+                    </div>
                 )}
 
                 {/* 加载历史记录提示 */}
