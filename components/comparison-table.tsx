@@ -2321,7 +2321,6 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
               oldFileUrl: oldFileUrl,
               newFileUrl: newFileUrl,
               rawCozeResponse: rawCozeData,
-              add_time: getBeijingTime(),
               isVerified: false, // 重新对比后重置审核状态
               username,
             }),
