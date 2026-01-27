@@ -630,13 +630,6 @@ export default function StandardComparePage() {
         }
     };
 
-    // 获取北京时间（UTC+8）
-    const getBeijingTime = () => {
-        const now = new Date();
-        const beijingTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // UTC+8
-        return beijingTime.toISOString();
-    };
-
     // 调用对比API
     const compareFile = async (fileId: string, file_url: string, mode: "create" | "overwrite" = "create", recordId?: string) => {
         // 辅助函数：获取最新的文件对象（解决闭包问题）
