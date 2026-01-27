@@ -2,8 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCozeToken } from "@/lib/coze-config";
 import tcb from "@cloudbase/node-sdk";
 import { jsonrepair } from "jsonrepair";
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
+import { Agent, setGlobalDispatcher } from "undici";
+
+// 路由配置
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const maxDuration = 600; // 10分钟（600秒），Vercel Pro 最大支持 300 秒，自托管可以更长
 // 腾讯云开发环境ID
 const ENV_ID = process.env.TCB_ENV_ID || "pet-8g5ohyrp269f409e-9bua741dcc7";
 const COLLECTION_NAME = "standard_compare_records";
@@ -34,6 +38,17 @@ function getDatabase() {
 const WORKFLOW_ID = "7589638340099620891";
 const MAX_RETRIES = 5; // 最大重试次数
 const RETRY_DELAY = 2000; // 重试延迟（毫秒）
+const FETCH_TIMEOUT = 480000; // fetch 超时时间（8分钟，单位：毫秒）
+
+// 配置 undici 的超时时间，使用 undici 的内置超时机制
+const fetchAgent = new Agent({
+  headersTimeout: FETCH_TIMEOUT, // 8分钟，等待响应头的最大时间
+  bodyTimeout: FETCH_TIMEOUT, // 8分钟，读取响应体的最大时间
+  connectTimeout: 10000, // 10秒，建立连接的超时时间
+});
+
+// 设置全局 dispatcher，所有 fetch 请求都会使用这个配置
+setGlobalDispatcher(fetchAgent);
 
 // 从扣子API返回的数据中提取内容（支持多层嵌套的JSON字符串）
 function extractContent(data: any): any {
@@ -166,16 +181,44 @@ async function callCozeWorkflow(
     console.log(`调用扣子工作流API - 第 ${attempt}/${MAX_RETRIES} 次尝试:`, {
       file_url,
       requestBody: JSON.stringify(requestBody, null, 2),
+      timeout: `${FETCH_TIMEOUT / 1000}秒`,
     });
 
-    const response = await fetch("https://api.coze.cn/v1/workflow/run", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${cozeToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
-    });
+    let response: Response;
+
+    try {
+      // 使用 undici 配置的超时时间，无需手动设置定时器
+      response = await fetch("https://api.coze.cn/v1/workflow/run", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${cozeToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      });
+    } catch (fetchError: any) {
+      // 处理网络错误和超时错误
+      // undici 超时会抛出包含 'Timeout' 的错误
+      const isTimeout = fetchError.cause?.message?.includes('Timeout') ||
+                       fetchError.message?.includes('fetch failed') ||
+                       fetchError.message?.includes('Headers Timeout');
+      
+      if (isTimeout && attempt < MAX_RETRIES) {
+        console.warn(`⚠️ 请求超时或网络错误 (第 ${attempt}/${MAX_RETRIES} 次):`, {
+          error: fetchError.message,
+          cause: fetchError.cause?.message,
+          timeout: `${FETCH_TIMEOUT / 1000}秒`,
+        });
+        console.log(`等待 ${RETRY_DELAY}ms 后重试...`);
+        await delay(RETRY_DELAY);
+        continue;
+      } else {
+        const errorMessage = isTimeout 
+          ? `请求超时（${FETCH_TIMEOUT / 1000}秒）: ${fetchError.message || '连接超时'}`
+          : `网络错误: ${fetchError.message || '未知错误'}`;
+        throw new Error(errorMessage);
+      }
+    }
 
     let data;
     try {

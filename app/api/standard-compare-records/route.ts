@@ -459,7 +459,7 @@ export async function GET(request: NextRequest) {
 
     // 查询记录（按时间倒序）
     const records: any = await query
-      .orderBy("add_time", "desc")
+      .orderBy("createTime", "desc")
       .skip((page - 1) * pageSize)
       .limit(pageSize)
       .get();

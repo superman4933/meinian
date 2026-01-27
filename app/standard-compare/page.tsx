@@ -32,7 +32,7 @@ interface FileInfo {
     file_url: string;
     city: string; // 城市名称
     uploadStatus: "uploading" | "success" | "error";
-    compareStatus: "idle" | "comparing" | "success" | "error";
+    compareStatus: "idle" | "waiting" | "comparing" | "success" | "error";
     compareResult: StandardItem[] | null;
     error?: string;
     uploadProgress: number;
@@ -96,6 +96,18 @@ export default function StandardComparePage() {
     const [historyFiles, setHistoryFiles] = useState<FileInfo[]>([]);
     const [isLoadingHistory, setIsLoadingHistory] = useState(false);
     const [filterStatus, setFilterStatus] = useState("全部状态");
+
+    // 批量对比相关状态
+    const [isComparing, setIsComparing] = useState(false);
+    const [compareProgress, setCompareProgress] = useState({ current: 0, total: 0, waiting: 0, comparing: 0 });
+    const isCancelledRef = useRef(false);
+    const filesRefForCompare = useRef<FileInfo[]>([]);
+    const completedCountRef = useRef(0);
+
+    // 保持 filesRefForCompare 与 files 同步
+    useEffect(() => {
+        filesRefForCompare.current = files;
+    }, [files]);
 
     // 覆盖/创建模式选择对话框
     const [compareModeModal, setCompareModeModal] = useState<{
@@ -187,7 +199,7 @@ export default function StandardComparePage() {
             }
             const params = new URLSearchParams({
                 page: page.toString(),
-                pageSize: "500",
+                pageSize: "10", // 每页10条，与首页一致
                 username,
             });
             if (filterStatus === "已审核") {
@@ -279,14 +291,19 @@ export default function StandardComparePage() {
         setIsLoggedIn(false);
     };
 
-    // 并发控制函数：限制同时执行的任务数
+    // 并发控制函数：限制同时执行的任务数（支持取消）
     const limitConcurrency = async (
         tasks: (() => Promise<void>)[],
-        limit: number
+        limit: number = 5
     ): Promise<void> => {
         const executing: Promise<void>[] = [];
 
         for (const task of tasks) {
+            // 检查是否已取消
+            if (isCancelledRef.current) {
+                break;
+            }
+
             const promise = task().finally(() => {
                 // 任务完成后从执行队列中移除
                 const index = executing.indexOf(promise);
@@ -299,12 +316,19 @@ export default function StandardComparePage() {
 
             // 如果达到并发限制，等待至少一个任务完成
             if (executing.length >= limit) {
-                await Promise.race(executing);
+                try {
+                    await Promise.race(executing);
+                } catch (error) {
+                    // 处理错误，但不中断循环
+                    if (process.env.NODE_ENV === 'development') {
+                        console.error("任务执行错误:", error);
+                    }
+                }
             }
         }
 
         // 等待所有剩余任务完成
-        await Promise.all(executing);
+        await Promise.allSettled(executing);
     };
 
     // 处理文件选择
@@ -566,15 +590,8 @@ export default function StandardComparePage() {
                     )
                 );
 
-                // 上传成功后立即调用对比API
-                // 使用 requestAnimationFrame 确保状态更新完成后再调用
-                requestAnimationFrame(() => {
-                    setTimeout(() => {
-                        compareFile(fileId, data.file_url).catch((error) => {
-                            console.error(`文件 ${fileId} 对比失败:`, error);
-                        });
-                    }, 100);
-                });
+                // 上传成功后，将文件状态设置为 idle（等待对比），不立即调用对比API
+                // 用户可以通过批量对比按钮统一触发对比
 
                 return {success: true};
             } else {
@@ -915,7 +932,8 @@ export default function StandardComparePage() {
                         }
                     } catch (e) {
                         console.error("查询记录创建时间失败:", e);
-                        // 查询失败时，仍然更新状态但不设置时间
+                        // 查询失败时，使用当前时间作为临时时间（UTC）
+                        const fallbackTime = new Date().toISOString();
                         setFiles((prev) =>
                             prev.map((f) =>
                                 f.id === fileId
@@ -924,6 +942,7 @@ export default function StandardComparePage() {
                                         compareStatus: "success" as const,
                                         compareResult: data.structured,
                                         compareProgress: "对比完成",
+                                        compareTime: fallbackTime, // 使用当前时间作为临时时间
                                         _id: data._id,
                                         isVerified: mode === "overwrite" ? false : f.isVerified,
                                     }
@@ -939,6 +958,7 @@ export default function StandardComparePage() {
                                             compareStatus: "success" as const,
                                             compareResult: data.structured,
                                             compareProgress: "对比完成",
+                                            compareTime: fallbackTime, // 使用当前时间作为临时时间
                                             _id: data._id,
                                             isVerified: mode === "overwrite" ? false : f.isVerified,
                                         }
@@ -948,7 +968,8 @@ export default function StandardComparePage() {
                         }
                     }
                 } else {
-                    // 如果没有 _id，仍然更新状态但不设置时间
+                    // 如果没有 _id，使用当前时间作为临时时间（UTC）
+                    const fallbackTime = new Date().toISOString();
                     setFiles((prev) =>
                         prev.map((f) =>
                             f.id === fileId
@@ -957,6 +978,7 @@ export default function StandardComparePage() {
                                     compareStatus: "success" as const,
                                     compareResult: data.structured,
                                     compareProgress: "对比完成",
+                                    compareTime: fallbackTime, // 使用当前时间作为临时时间
                                 }
                                 : f
                         )
@@ -970,6 +992,7 @@ export default function StandardComparePage() {
                                         compareStatus: "success" as const,
                                         compareResult: data.structured,
                                         compareProgress: "对比完成",
+                                        compareTime: fallbackTime, // 使用当前时间作为临时时间
                                     }
                                     : f
                             )
@@ -1129,6 +1152,169 @@ export default function StandardComparePage() {
         }
     };
 
+    // 取消批量对比
+    const handleCancelCompare = () => {
+        isCancelledRef.current = true;
+        // 将所有等待中的任务恢复为 idle
+        filesRefForCompare.current.forEach((file) => {
+            if (file.compareStatus === "waiting") {
+                setFiles((prev) =>
+                    prev.map((f) =>
+                        f.id === file.id
+                            ? { ...f, compareStatus: "idle" as const }
+                            : f
+                    )
+                );
+            }
+        });
+        setIsComparing(false);
+        setCompareProgress({ current: 0, total: 0, waiting: 0, comparing: 0 });
+        showToast("已取消批量对比", "info");
+    };
+
+    // 批量对比
+    const handleBatchCompare = async () => {
+        // 筛选出可以对比的文件（已上传成功且不是正在对比中）
+        const readyFiles = files.filter(
+            (f) =>
+                f.uploadStatus === "success" &&
+                f.file_url &&
+                f.compareStatus !== "comparing" &&
+                f.compareStatus !== "waiting" &&
+                f.compareStatus !== "success"
+        );
+
+        if (readyFiles.length === 0) {
+            showToast("没有可对比的文件，请先上传文件", "error");
+            return;
+        }
+
+        // 弹出确认对话框
+        const confirmMessage = `是否对比 ${readyFiles.length} 个文件？`;
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+
+        isCancelledRef.current = false;
+        setIsComparing(true);
+
+        // 创建一个 Set 来跟踪应该处理的任务 ID
+        const taskIds = new Set(readyFiles.map((f) => f.id));
+
+        // 先设置所有任务为"等待中"
+        readyFiles.forEach((file) => {
+            setFiles((prev) =>
+                prev.map((f) =>
+                    f.id === file.id
+                        ? { ...f, compareStatus: "waiting" as const }
+                        : f
+                )
+            );
+        });
+
+        const totalCount = readyFiles.length;
+
+        // 初始化进度
+        completedCountRef.current = 0;
+        setCompareProgress({
+            current: 0,
+            total: totalCount,
+            waiting: totalCount,
+            comparing: 0,
+        });
+
+        // 等待一个 tick，确保状态更新完成
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        // 使用函数式更新来避免竞态条件
+        const updateProgress = (
+            incrementCurrent: number = 0,
+            decrementWaiting: number = 0,
+            incrementComparing: number = 0,
+            decrementComparing: number = 0
+        ) => {
+            if (incrementCurrent > 0) {
+                completedCountRef.current += incrementCurrent;
+            }
+            setCompareProgress((prev) => ({
+                current: completedCountRef.current,
+                total: totalCount,
+                waiting: Math.max(0, prev.waiting - decrementWaiting),
+                comparing: Math.max(0, prev.comparing + incrementComparing - decrementComparing),
+            }));
+        };
+
+        try {
+            // 创建任务数组
+            const compareTasks = readyFiles.map((file) => async () => {
+                // 检查是否已取消
+                if (isCancelledRef.current) {
+                    return;
+                }
+
+                // 更新状态为对比中
+                setFiles((prev) =>
+                    prev.map((f) =>
+                        f.id === file.id
+                            ? { ...f, compareStatus: "comparing" as const }
+                            : f
+                    )
+                );
+                updateProgress(0, 1, 1, 0); // 减少等待，增加对比中
+
+                try {
+                    await compareFile(file.id, file.file_url, "create");
+                    updateProgress(1, 0, 0, 1); // 增加完成，减少对比中
+                } catch (error: any) {
+                    setFiles((prev) =>
+                        prev.map((f) =>
+                            f.id === file.id
+                                ? {
+                                      ...f,
+                                      compareStatus: "error" as const,
+                                      error: error.message || "对比失败",
+                                  }
+                                : f
+                        )
+                    );
+                    updateProgress(1, 0, 0, 1); // 增加完成，减少对比中
+                }
+            });
+
+            // 使用并发控制执行任务
+            await limitConcurrency(compareTasks, 5);
+
+            // 如果被取消，恢复所有等待中的任务
+            if (isCancelledRef.current) {
+                filesRefForCompare.current.forEach((file) => {
+                    if (file.compareStatus === "waiting") {
+                        setFiles((prev) =>
+                            prev.map((f) =>
+                                f.id === file.id
+                                    ? { ...f, compareStatus: "idle" as const }
+                                    : f
+                            )
+                        );
+                    }
+                });
+            }
+
+            // 显示完成提示
+            if (!isCancelledRef.current) {
+                const successCount = filesRefForCompare.current.filter(
+                    (f) => f.compareStatus === "success" && taskIds.has(f.id)
+                ).length;
+                showToast(`批量对比完成：成功 ${successCount} 个`, "success");
+            }
+        } catch (error) {
+            console.error("批量对比错误:", error);
+            showToast("批量对比过程中出现错误，请检查网络连接", "error");
+        } finally {
+            setIsComparing(false);
+            setCompareProgress({ current: 0, total: 0, waiting: 0, comparing: 0 });
+        }
+    };
+
     // 再次对比（弹出模式选择对话框）
     const handleRecompare = async (fileId: string) => {
         const file = showHistory 
@@ -1157,9 +1343,9 @@ export default function StandardComparePage() {
 
         if (!file) return;
 
-        // 检查是否正在对比
-        if (file.compareStatus === "comparing") {
-            showToast("无法删除正在对比的文件，请等待对比完成", "error");
+        // 检查是否正在对比或等待对比
+        if (file.compareStatus === "comparing" || file.compareStatus === "waiting") {
+            showToast("无法删除正在对比或等待对比的文件，请等待对比完成", "error");
             return;
         }
 
@@ -1295,10 +1481,10 @@ export default function StandardComparePage() {
         const currentFiles = showHistory ? filteredFiles : files;
         const selectedFiles = currentFiles.filter((file) => selectedIds.has(file.id));
         
-        // 检查是否有正在对比的文件
-        const comparingFiles = selectedFiles.filter((file) => file.compareStatus === "comparing");
+        // 检查是否有正在对比或等待对比的文件
+        const comparingFiles = selectedFiles.filter((file) => file.compareStatus === "comparing" || file.compareStatus === "waiting");
         if (comparingFiles.length > 0) {
-            showToast("无法删除正在对比的文件，请等待对比完成", "error");
+            showToast("无法删除正在对比或等待对比的文件，请等待对比完成", "error");
             return;
         }
 
@@ -1933,6 +2119,41 @@ export default function StandardComparePage() {
                 <div className="flex flex-col gap-3">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
+                            {!showHistory && (
+                                <>
+                                    <button
+                                        onClick={handleBatchCompare}
+                                        disabled={isComparing || files.filter(f => f.uploadStatus === "success" && f.file_url && f.compareStatus !== "comparing" && f.compareStatus !== "waiting" && f.compareStatus !== "success").length === 0}
+                                        className="px-4 py-2 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                                        </svg>
+                                        批量对比
+                                    </button>
+                                    {isComparing && (
+                                        <button
+                                            onClick={handleCancelCompare}
+                                            className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors flex items-center gap-2"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                            取消对比
+                                        </button>
+                                    )}
+                                    {isComparing && compareProgress.total > 0 && (
+                                        <div className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 flex items-center gap-2">
+                                            <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                            </svg>
+                                            进度: {compareProgress.current}/{compareProgress.total} 
+                                            {compareProgress.waiting > 0 && ` (等待: ${compareProgress.waiting})`}
+                                            {compareProgress.comparing > 0 && ` (对比中: ${compareProgress.comparing})`}
+                                        </div>
+                                    )}
+                                </>
+                            )}
                             <button
                                 onClick={toggleSelectAll}
                                 className="px-4 py-2 rounded-lg text-sm font-medium bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 transition-colors flex items-center gap-2"
@@ -2274,6 +2495,14 @@ export default function StandardComparePage() {
                                                     <div className="text-xs text-red-600">{file.error}</div>
                                                 )}
                                                 {/* 对比状态 */}
+                                                {file.compareStatus === "waiting" && (
+                                                    <div className="flex items-center gap-2 text-xs text-yellow-600">
+                                                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                        </svg>
+                                                        等待对比
+                                                    </div>
+                                                )}
                                                 {file.compareStatus === "comparing" && (
                                                     <div className="flex items-center gap-2 text-xs text-blue-600">
                                                         <svg className="h-3 w-3 animate-spin" fill="none"
