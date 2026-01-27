@@ -3054,10 +3054,10 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         "旧年度文件链接": item["旧年度文件"].url || "",
         "新年度文件": item["新年度文件"].text || "",
         "新年度文件链接": item["新年度文件"].url || "",
+        "摘要": item["摘要"],
         "新增内容": item["新增内容"],
         "修改内容": item["修改内容"],
         "删除内容": item["删除内容"],
-        "摘要": item["摘要"],
       }));
 
       // 创建工作簿
@@ -3074,10 +3074,10 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         { wch: 50 }, // 旧年度文件链接
         { wch: 30 }, // 新年度文件
         { wch: 50 }, // 新年度文件链接
+        { wch: 80 }, // 摘要
         { wch: 50 }, // 新增内容
         { wch: 50 }, // 修改内容
         { wch: 50 }, // 删除内容
-        { wch: 80 }, // 摘要
       ];
       ws["!cols"] = colWidths;
 
@@ -3123,14 +3123,17 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           };
         }
 
-        // 设置新增内容、修改内容、删除内容列（第7、8、9列，索引6、7、8）
+        // 设置摘要列（第7列，索引6）
+        const summaryCell = XLSX.utils.encode_cell({ r: rowIndex, c: 6 }); // 摘要
+        
+        // 设置新增内容、修改内容、删除内容列（第8、9、10列，索引7、8、9）
         // 确保包含换行符的单元格设置为文本格式
-        const addedCell = XLSX.utils.encode_cell({ r: rowIndex, c: 6 }); // 新增内容
-        const modifiedCell = XLSX.utils.encode_cell({ r: rowIndex, c: 7 }); // 修改内容
-        const deletedCell = XLSX.utils.encode_cell({ r: rowIndex, c: 8 }); // 删除内容
+        const addedCell = XLSX.utils.encode_cell({ r: rowIndex, c: 7 }); // 新增内容
+        const modifiedCell = XLSX.utils.encode_cell({ r: rowIndex, c: 8 }); // 修改内容
+        const deletedCell = XLSX.utils.encode_cell({ r: rowIndex, c: 9 }); // 删除内容
         
         // 如果单元格包含换行符，设置为文本格式以确保换行符正确显示
-        [addedCell, modifiedCell, deletedCell].forEach((cellAddr) => {
+        [summaryCell, addedCell, modifiedCell, deletedCell].forEach((cellAddr) => {
           if (ws[cellAddr] && ws[cellAddr].v && typeof ws[cellAddr].v === 'string' && ws[cellAddr].v.includes('\n')) {
             if (!ws[cellAddr].z) {
               ws[cellAddr].z = '@'; // 文本格式
