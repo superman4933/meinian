@@ -2268,13 +2268,6 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       // 保存结果（可能是结构化数据或原始内容）
       const resultContent = data.markdown || data.data || "对比完成";
 
-      // 获取北京时间（UTC+8）
-      const getBeijingTime = () => {
-        const now = new Date();
-        const beijingTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // UTC+8
-        return beijingTime.toISOString();
-      };
-
       // 如果是历史记录覆盖模式，更新历史记录状态
       if (isHistoryOverwrite && targetRow._id) {
         setHistoryComparingStates(prev => {
@@ -2291,13 +2284,14 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           return newMap;
         });
       } else {
+        // 使用 UTC 时间（保存到数据库后会从数据库获取 createTime 更新）
         updateComparison(targetRowId, {
           comparisonStatus: "done",
           comparisonResult: resultContent,
           comparisonStructured: data.structured || undefined,
           isJsonFormat: data.isJsonFormat || false,
           comparisonError: undefined,
-          // compareTime 将在保存到数据库后从数据库获取
+          compareTime: new Date().toISOString(), // 使用 UTC 时间，保存后会从数据库获取
           isVerified: false, // 默认未审核
         });
       }
@@ -2825,7 +2819,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
       isJsonFormat: comparingState?.isJsonFormat !== undefined ? comparingState.isJsonFormat : isJsonFormat,
       comparisonError: comparingState?.comparisonError,
       _id: record._id, // 直接使用数据库的_id字段
-      compareTime: record.createTime, // 使用数据库的创建时间字段（北京时间）
+      compareTime: record.createTime, // 使用数据库的创建时间字段（UTC 时间）
       isVerified: comparingState?.isVerified !== undefined ? comparingState.isVerified : (record.isVerified || false), // 是否已审核确认
     };
   });
@@ -2977,18 +2971,30 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
     }
   };
 
-  // 格式化对比时间
+  // 格式化对比时间（将 UTC 时间转换为北京时间显示）
   const formatCompareTime = (timeStr?: string) => {
     if (!timeStr) return "";
     try {
+      // timeStr 应该是 UTC 时间的 ISO 字符串（如 "2025-01-21T10:00:00.000Z"）
       const date = new Date(timeStr);
+      
+      // 检查日期是否有效
+      if (isNaN(date.getTime())) {
+        return "";
+      }
+      
       // 转换为北京时间（UTC+8）
-      const beijingTime = new Date(date.getTime() + (8 * 60 * 60 * 1000));
-      const year = beijingTime.getUTCFullYear();
-      const month = String(beijingTime.getUTCMonth() + 1).padStart(2, '0');
-      const day = String(beijingTime.getUTCDate()).padStart(2, '0');
-      const hours = String(beijingTime.getUTCHours()).padStart(2, '0');
-      const minutes = String(beijingTime.getUTCMinutes()).padStart(2, '0');
+      // getTime() 返回的是 UTC 时间戳（毫秒），加上 8 小时得到北京时间的时间戳
+      const beijingTimestamp = date.getTime() + (8 * 60 * 60 * 1000);
+      const beijingDate = new Date(beijingTimestamp);
+      
+      // 使用 UTC 方法获取，因为时间戳是 UTC 基准的
+      const year = beijingDate.getUTCFullYear();
+      const month = String(beijingDate.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(beijingDate.getUTCDate()).padStart(2, '0');
+      const hours = String(beijingDate.getUTCHours()).padStart(2, '0');
+      const minutes = String(beijingDate.getUTCMinutes()).padStart(2, '0');
+      
       return `${year}-${month}-${day} ${hours}:${minutes}`;
     } catch (e) {
       return "";
@@ -3204,10 +3210,12 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
     }
   });
 
-  // 按分公司名称排序
-  const sortedComparisons = [...filteredComparisons].sort((a, b) =>
-    a.company.localeCompare(b.company, "zh-CN")
-  );
+  // 按分公司名称排序（仅当前对比），历史记录保持后端返回的顺序
+  const sortedComparisons = showHistory 
+    ? filteredComparisons  // 历史记录直接使用后端返回的顺序（已按时间排序）
+    : [...filteredComparisons].sort((a, b) =>
+        a.company.localeCompare(b.company, "zh-CN")
+      );
 
   // 检查是否全选
   const isAllSelected = sortedComparisons.length > 0 && selectedIds.size === sortedComparisons.length;
@@ -3486,18 +3494,29 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
                 // 格式化分公司名称显示，如果是未知分公司（包含未知_ID格式），只显示"未知"
                 const displayCompany = row.company.startsWith("未知_") ? "未知" : row.company;
                 
-                // 格式化对比时间显示（北京时间）
+                // 格式化对比时间显示（将 UTC 时间转换为北京时间）
                 const formatCompareTime = (timeStr?: string) => {
                   if (!timeStr) return "—";
                   try {
+                    // timeStr 应该是 UTC 时间的 ISO 字符串（如 "2025-01-21T10:00:00.000Z"）
                     const date = new Date(timeStr);
+                    
+                    // 检查日期是否有效
+                    if (isNaN(date.getTime())) {
+                      return "—";
+                    }
+                    
                     // 转换为北京时间（UTC+8）
-                    const beijingTime = new Date(date.getTime() + (8 * 60 * 60 * 1000));
-                    const year = beijingTime.getUTCFullYear();
-                    const month = String(beijingTime.getUTCMonth() + 1).padStart(2, '0');
-                    const day = String(beijingTime.getUTCDate()).padStart(2, '0');
-                    const hours = String(beijingTime.getUTCHours()).padStart(2, '0');
-                    const minutes = String(beijingTime.getUTCMinutes()).padStart(2, '0');
+                    const beijingTimestamp = date.getTime() + (8 * 60 * 60 * 1000);
+                    const beijingDate = new Date(beijingTimestamp);
+                    
+                    // 使用 UTC 方法获取，因为时间戳是 UTC 基准的
+                    const year = beijingDate.getUTCFullYear();
+                    const month = String(beijingDate.getUTCMonth() + 1).padStart(2, '0');
+                    const day = String(beijingDate.getUTCDate()).padStart(2, '0');
+                    const hours = String(beijingDate.getUTCHours()).padStart(2, '0');
+                    const minutes = String(beijingDate.getUTCMinutes()).padStart(2, '0');
+                    
                     return `${year}-${month}-${day} ${hours}:${minutes}`;
                   } catch (e) {
                     return "—";

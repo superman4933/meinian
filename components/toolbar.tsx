@@ -245,13 +245,6 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
           // 保存结果
           const resultContent = data.markdown || data.data || "对比完成";
 
-          // 获取北京时间（UTC+8）
-          const getBeijingTime = () => {
-            const now = new Date();
-            const beijingTime = new Date(now.getTime() + (8 * 60 * 60 * 1000)); // UTC+8
-            return beijingTime.toISOString();
-          };
-
           // 规范化 structured 数据，确保所有字段都存在且类型正确
           const normalizedStructured = data.structured ? {
             summary: data.structured.summary || "",
@@ -262,13 +255,14 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
             detailed: data.structured.detailed || "",
           } : undefined;
 
+          // 使用 UTC 时间（保存到数据库后会从数据库获取 createTime 更新）
           updateComparison(row.id, {
             comparisonStatus: "done",
             comparisonResult: resultContent,
             comparisonStructured: normalizedStructured,
             isJsonFormat: data.isJsonFormat || false,
             comparisonError: undefined,
-            compareTime: getBeijingTime(), // 当前对比时间（北京时间）
+            compareTime: new Date().toISOString(), // 使用 UTC 时间，保存后会从数据库获取
           });
 
           // 对比完成后，保存原始扣子API返回数据到数据库
@@ -304,7 +298,22 @@ export function Toolbar({ onFilterChange }: ToolbarProps) {
             const saveData = await saveResponse.json();
             if (saveData.success && saveData._id) {
               // 保存数据库的_id到ComparisonRow中，用于后续更新操作
-              updateComparison(row.id, { _id: saveData._id });
+              // 从数据库查询记录获取 createTime（UTC 时间）
+              try {
+                const recordResponse = await fetch(`/api/policy-compare-records?id=${saveData._id}&username=${encodeURIComponent(username)}`);
+                const recordData = await recordResponse.json();
+                if (recordData.success && recordData.data && recordData.data.createTime) {
+                  updateComparison(row.id, { 
+                    _id: saveData._id,
+                    compareTime: recordData.data.createTime, // 使用数据库的创建时间（UTC）
+                  });
+                } else {
+                  updateComparison(row.id, { _id: saveData._id });
+                }
+              } catch (e) {
+                console.error("查询记录创建时间失败:", e);
+                updateComparison(row.id, { _id: saveData._id });
+              }
             }
           } catch (saveError) {
             console.error(`保存对比结果到数据库失败 [${row.company}]:`, saveError);
