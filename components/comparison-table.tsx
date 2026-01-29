@@ -3172,16 +3172,9 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
 
     const selectedRows = sortedComparisons.filter((row) => selectedIds.has(row.id));
     
-    // 只导出已完成的对比记录
-    const completedRows = selectedRows.filter((row) => row.comparisonStatus === "done");
-    
-    if (completedRows.length === 0) {
-      showToast("选中的项中没有已完成的对比记录", "info");
-      return;
-    }
-
+    // 导出所有选中的记录，未完成的记录内容为空
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-    exportToExcel(completedRows, `对比记录_选中_${timestamp}.xlsx`);
+    exportToExcel(selectedRows, `对比记录_选中_${timestamp}.xlsx`);
   };
 
 
