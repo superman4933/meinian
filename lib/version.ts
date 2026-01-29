@@ -1,7 +1,7 @@
 // 版本信息配置
 export const VERSION_INFO = {
-  version: "1.2.1",
-  updateTime: "2026-01-29 11:00:00", // 格式：YYYY-MM-DD HH:mm:ss
+  version: "1.2.2",
+  updateTime: "2026-01-29 11:30:00", // 格式：YYYY-MM-DD HH:mm:ss
 };
 
 // 格式化更新时间显示

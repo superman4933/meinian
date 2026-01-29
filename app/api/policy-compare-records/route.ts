@@ -509,15 +509,22 @@ export async function GET(request: NextRequest) {
         .collection(COLLECTION_NAME)
         .where(whereCondition);
       
-      const allRecords: any = await countQuery.field({ _id: true }).get();
+      // 使用 count() 方法获取准确总数
+      const countResult: any = await countQuery.count();
       
-      let total = 0;
-      if (typeof allRecords.code === 'string') {
-        total = dataCount;
-      } else {
-        total = allRecords.data ? allRecords.data.length : 0;
+      if (typeof countResult.code === 'string') {
+        console.error("查询记录总数失败:", countResult);
+        return NextResponse.json(
+          {
+            success: false,
+            message: countResult.message || "查询记录总数失败",
+            code: countResult.code,
+          },
+          { status: 500 }
+        );
       }
       
+      const total = countResult.total || 0;
       const totalPages = Math.ceil(total / pageSize);
 
       return NextResponse.json({
