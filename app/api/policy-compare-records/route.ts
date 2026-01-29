@@ -374,7 +374,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const recordId = searchParams.get("id");
     const page = parseInt(searchParams.get("page") || "1");
-    const pageSize = parseInt(searchParams.get("pageSize") || "100");
+    const pageSize = parseInt(searchParams.get("pageSize") || "10"); // 默认每页10条，与前端保持一致
     const skip = (page - 1) * pageSize;
     const username = searchParams.get("username");
     const getAll = searchParams.get("all") === "true";

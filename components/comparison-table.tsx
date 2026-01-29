@@ -1778,6 +1778,7 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
   const [historyRecords, setHistoryRecords] = useState<any[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [totalRecords, setTotalRecords] = useState(0); // 总记录数
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   
@@ -1855,10 +1856,11 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         return;
       }
       
-      // 构建查询参数
+      // 构建查询参数，确保 pageSize 始终为 10
+      const pageSize = "10";
       const params = new URLSearchParams({
         page: page.toString(),
-        pageSize: "10", // 每页10条
+        pageSize: pageSize, // 每页10条，确保分页加载
         username: username,
       });
       
@@ -1867,13 +1869,27 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         params.append("keyword", keyword.trim());
       }
       
-      const response = await fetch(`/api/policy-compare-records?${params.toString()}`);
+      const url = `/api/policy-compare-records?${params.toString()}`;
+      console.log("加载历史记录:", { page, pageSize, keyword, url });
+      
+      const response = await fetch(url);
       const data = await response.json();
 
       if (data.success) {
-        setHistoryRecords(data.data || []);
-        setCurrentPage(data.pagination?.page || 1);
-        setTotalPages(data.pagination?.totalPages || 1);
+        const records = data.data || [];
+        const pagination = data.pagination || {};
+        console.log("历史记录加载成功:", {
+          recordsCount: records.length,
+          page: pagination.page,
+          pageSize: pagination.pageSize,
+          total: pagination.total,
+          totalPages: pagination.totalPages,
+        });
+        
+        setHistoryRecords(records);
+        setCurrentPage(pagination.page || 1);
+        setTotalPages(pagination.totalPages || 1);
+        setTotalRecords(pagination.total || 0); // 保存总记录数
       } else {
         console.error("加载历史记录失败:", data);
         showToast("加载历史记录失败", "error");
@@ -3316,36 +3332,6 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
           )}
         </div>
 
-        {/* 分页控件（仅历史记录显示时） */}
-        {showHistory && (
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                if (currentPage > 1) {
-                  loadHistoryRecords(currentPage - 1, isSearching ? searchKeyword : undefined);
-                }
-              }}
-              disabled={currentPage <= 1 || isLoadingHistory}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              上一页
-            </button>
-            <span className="px-4 py-2 text-sm text-slate-600">
-              第 {currentPage} 页 / 共 {totalPages} 页
-            </span>
-            <button
-              onClick={() => {
-                if (currentPage < totalPages) {
-                  loadHistoryRecords(currentPage + 1, isSearching ? searchKeyword : undefined);
-                }
-              }}
-              disabled={currentPage >= totalPages || isLoadingHistory}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              下一页
-            </button>
-          </div>
-        )}
       </div>
 
       {/* 操作按钮区域 */}
@@ -4028,9 +4014,42 @@ export function ComparisonTable({ filterStatus = "全部状态" }: ComparisonTab
         )}
       </div>
 
+      {/* 分页控件（仅历史记录显示时，放在表格下方右对齐） */}
+      {showHistory && (
+        <div className="border-t border-slate-200 bg-white px-4 py-4">
+          <div className="flex items-center justify-end gap-4">
+            <button
+              onClick={() => {
+                if (currentPage > 1) {
+                  loadHistoryRecords(currentPage - 1, isSearching ? searchKeyword : undefined);
+                }
+              }}
+              disabled={currentPage <= 1 || isLoadingHistory}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              上一页
+            </button>
+            <span className="px-4 py-2 text-sm text-slate-600">
+              第 {currentPage} 页 / 共 {totalPages} 页
+            </span>
+            <button
+              onClick={() => {
+                if (currentPage < totalPages) {
+                  loadHistoryRecords(currentPage + 1, isSearching ? searchKeyword : undefined);
+                }
+              }}
+              disabled={currentPage >= totalPages || isLoadingHistory}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              下一页
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="border-t border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 flex items-center justify-between">
         <span>提示：只有"新年度+旧年度"齐全才可"单独比对 / 一键比对"。</span>
-        <span>共 {sortedComparisons.length} 家分公司</span>
+        <span>共 {showHistory ? totalRecords : sortedComparisons.length} {showHistory ? '条记录' : '家分公司'}</span>
       </div>
     </section>
 
